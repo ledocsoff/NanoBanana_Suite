@@ -31,6 +31,9 @@ _spec2.loader.exec_module(_calendar_html)
 
 TIME_BLOCKS = _xlsx_utils.TIME_BLOCKS
 TIME_BLOCK_CHOICES = _xlsx_utils.TIME_BLOCK_CHOICES
+BLOCK_KEYS = _xlsx_utils.BLOCK_KEYS
+merge_time_blocks = _xlsx_utils.merge_time_blocks
+merged_duration_minutes = _xlsx_utils.merged_duration_minutes
 format_paris_time = _xlsx_utils.format_paris_time
 load_template = _xlsx_utils.load_template
 build_calendar_html = _calendar_html.build_calendar_html
@@ -58,9 +61,17 @@ class NB_GeeLarkScheduler:
                     "default": "",
                     "tooltip": "Chemin du fichier .xlsx exporté depuis GeeLark. Le type (Reels/Profile) est auto-détecté."
                 }),
-                "time_block": (TIME_BLOCK_CHOICES, {
-                    "default": TIME_BLOCK_CHOICES[2],
-                    "tooltip": "Plage horaire Paris dans laquelle répartir les tâches."
+                "block_matin": ("BOOLEAN", {
+                    "default": True,
+                    "tooltip": "☀️ Matin (08h-16h) — Warmup"
+                }),
+                "block_apresmidi": ("BOOLEAN", {
+                    "default": True,
+                    "tooltip": "🌆 Après-midi (16h-22h) — Maintenance"
+                }),
+                "block_soir": ("BOOLEAN", {
+                    "default": False,
+                    "tooltip": "🌙 Soir (22h-04h) — Prime Time US"
                 }),
                 "start_days_from_now": ("INT", {
                     "default": 1,
@@ -107,8 +118,8 @@ class NB_GeeLarkScheduler:
         # Default: it's a post template (caption in col5)
         return "post_video/carousel"
 
-    def schedule(self, template_file, time_block, start_days_from_now,
-                 captions="", days_spread=7, min_gap_minutes=30):
+    def schedule(self, template_file, block_matin, block_apresmidi, block_soir,
+                 start_days_from_now, captions="", days_spread=7, min_gap_minutes=30):
         template_file = template_file.strip().strip("'\"") if template_file else ""
 
         if not template_file or not os.path.exists(template_file):
@@ -116,6 +127,18 @@ class NB_GeeLarkScheduler:
 
         if not template_file.lower().endswith('.xlsx'):
             raise Exception(f"Le fichier template doit être un fichier .xlsx. Chemin fourni: '{template_file}'")
+
+        # Build merged time ranges from active toggles
+        active_keys = []
+        if block_matin:
+            active_keys.append(BLOCK_KEYS["block_matin"])
+        if block_apresmidi:
+            active_keys.append(BLOCK_KEYS["block_apresmidi"])
+        if block_soir:
+            active_keys.append(BLOCK_KEYS["block_soir"])
+
+        merged_ranges = merge_time_blocks(active_keys)
+        total_minutes = merged_duration_minutes(merged_ranges)
 
         # Auto-detect template type
         template_type = self._detect_template_type(template_file)
@@ -129,10 +152,14 @@ class NB_GeeLarkScheduler:
 
         caption_list = self._parse_captions(captions)
 
-        print(f"[NB_GeeLarkScheduler] 📅 Bloc: {time_block} (heure Paris directe)")
+        block_labels = [k for k, v in BLOCK_KEYS.items() if v in active_keys]
+        print(f"[NB_GeeLarkScheduler] 📅 Blocs actifs: {', '.join(block_labels)} ({total_minutes} min dispo/jour)")
 
         # Fill template and collect scheduled events for the calendar
-        events = self._fill_template(template_file, output_file, base_date, days_spread, min_gap_minutes, caption_list, template_type, time_block)
+        events = self._fill_template(
+            template_file, output_file, base_date, days_spread,
+            min_gap_minutes, caption_list, template_type, merged_ranges
+        )
 
         # Generate HTML calendar (shared module)
         html_path = output_file.replace(".xlsx", "_calendar.html")
@@ -170,64 +197,82 @@ class NB_GeeLarkScheduler:
             for _ in range(count)
         ]
 
-    def _generate_times_for_day(self, count, min_gap_minutes, block_start_h, block_end_h, target_date, min_time=None, existing_times=None):
-        """Generate random times within a block. Handles overnight blocks (e.g. 22h→04h).
-        Returns list of (date, time) tuples since overnight blocks span 2 calendar days."""
+    def _generate_times_for_day(self, count, min_gap_minutes, merged_ranges, target_date, min_datetime=None, global_scheduled_dts=None):
+        """Generate random times across multiple time ranges for a given day.
+
+        Args:
+            count: number of time slots to generate
+            min_gap_minutes: minimum gap between any two slots
+            merged_ranges: list of {"start_hour": int, "end_hour": int} dicts
+            target_date: the base date for scheduling
+            min_datetime: earliest allowed datetime (for same-day safety)
+            global_scheduled_dts: absolute datetimes already scheduled across all accounts
+
+        Returns:
+            list of (date, time) tuples, sorted chronologically.
+        """
         from datetime import time as dtime
 
-        if existing_times is None:
-            existing_times = []
+        if global_scheduled_dts is None:
+            global_scheduled_dts = []
 
-        is_overnight = block_end_h <= block_start_h
+        # Build a flat list of all valid minute offsets across all ranges
+        valid_offsets = []  # list of (absolute_minute_from_midnight, target_date_for_that_minute)
+        for rng in merged_ranges:
+            block_start_h = rng["start_hour"]
+            block_end_h = rng["end_hour"]
+            is_overnight = block_end_h <= block_start_h
 
-        # Block duration in minutes
-        if is_overnight:
-            block_duration = (24 - block_start_h + block_end_h) * 60
-        else:
-            block_duration = (block_end_h - block_start_h) * 60
+            if is_overnight:
+                block_duration = (24 - block_start_h + block_end_h) * 60
+            else:
+                block_duration = (block_end_h - block_start_h) * 60
+
+            for offset in range(block_duration):
+                total_min = block_start_h * 60 + offset
+                if total_min >= 24 * 60:
+                    actual_date = target_date + timedelta(days=1)
+                    total_min -= 24 * 60
+                else:
+                    actual_date = target_date
+                valid_offsets.append((total_min, actual_date))
+
+        if not valid_offsets:
+            return []
 
         results = []
         attempts = 0
 
-        while len(results) < count and attempts < 2000:
+        while len(results) < count and attempts < 3000:
             attempts += 1
 
-            rand_offset = random.randint(0, max(block_duration - 1, 0))
-            total_minutes = block_start_h * 60 + rand_offset
-
-            # Handle overflow past midnight for overnight blocks
-            if total_minutes >= 24 * 60:
-                actual_date = target_date + timedelta(days=1)
-                total_minutes -= 24 * 60
-            else:
-                actual_date = target_date
-
-            hour = total_minutes // 60
-            minute = total_minutes % 60
+            total_min, actual_date = random.choice(valid_offsets)
+            hour = total_min // 60
+            minute = total_min % 60
             candidate_time = dtime(hour=min(hour, 23), minute=minute)
+            candidate_dt = datetime.combine(actual_date, candidate_time)
 
-            if min_time and actual_date == datetime.now().date() and candidate_time < min_time:
+            if min_datetime and candidate_dt < min_datetime:
                 continue
 
-            candidate_min = candidate_time.hour * 60 + candidate_time.minute
-            all_times = [(t[1] if isinstance(t, tuple) else t) for t in results + existing_times]
-            too_close = any(
-                abs(candidate_min - (ex.hour * 60 + ex.minute)) < min_gap_minutes
-                for ex in all_times
-            )
+            too_close = False
+            for ex_dt in global_scheduled_dts + [datetime.combine(r[0], r[1]) for r in results]:
+                diff_mins = abs((candidate_dt - ex_dt).total_seconds()) / 60.0
+                if diff_mins < min_gap_minutes:
+                    too_close = True
+                    break
+            
             if not too_close:
                 results.append((actual_date, candidate_time))
 
         results.sort()
         return results
 
-    def _fill_template(self, template_file, output_file, base_date, days_spread, min_gap_minutes, caption_list, template_type="post_video/carousel", time_block="🌙 Soir (22h-04h) — Prime Time US"):
+    def _fill_template(self, template_file, output_file, base_date, days_spread, min_gap_minutes, caption_list, template_type="post_video/carousel", merged_ranges=None):
         from collections import defaultdict
 
-        # Get block boundaries (Paris hours)
-        block = TIME_BLOCKS.get(time_block, {"start_hour": 22, "end_hour": 4})
-        block_start_h = block["start_hour"]
-        block_end_h = block["end_hour"]
+        if merged_ranges is None:
+            merged_ranges = [{"start_hour": 22, "end_hour": 4}]
 
         wb, data_rows = load_template(template_file)
 
@@ -257,7 +302,7 @@ class NB_GeeLarkScheduler:
 
         cap_idx = 0
         events = []  # For HTML calendar
-        global_times_by_day = defaultdict(list)
+        global_scheduled_dts = []
 
         for acc, rows in account_rows.items():
             random.shuffle(rows)
@@ -275,25 +320,20 @@ class NB_GeeLarkScheduler:
                 else:
                     posts_today = remaining
 
-                min_time_arg = None
+                min_datetime = None
                 now = datetime.now()
                 current_date = base_date + timedelta(days=day_offset)
                 if current_date == now.date():
-                    safe_now = now + timedelta(minutes=30)
-                    min_time_arg = safe_now.time()
+                    min_datetime = now + timedelta(minutes=30)
 
                 today_times = self._generate_times_for_day(
                     posts_today,
                     min_gap_minutes,
-                    block_start_h,
-                    block_end_h,
+                    merged_ranges,
                     current_date,
-                    min_time=min_time_arg,
-                    existing_times=global_times_by_day.get(current_date, [])
+                    min_datetime=min_datetime,
+                    global_scheduled_dts=global_scheduled_dts
                 )
-
-                for actual_date, _ in today_times:
-                    global_times_by_day[actual_date].append(_)
 
                 for actual_date, pub_time in today_times:
                     if row_idx >= len(rows):
@@ -301,6 +341,8 @@ class NB_GeeLarkScheduler:
 
                     # Write Paris time directly — no conversion needed
                     pub_datetime = datetime.combine(actual_date, pub_time)
+                    global_scheduled_dts.append(pub_datetime)
+                    
                     row = rows[row_idx]
                     row[3].value = format_paris_time(pub_datetime)
 

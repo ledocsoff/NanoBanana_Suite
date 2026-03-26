@@ -23,6 +23,60 @@ TIME_BLOCK_CHOICES = list(TIME_BLOCKS.keys())
 # Minimum delay between sequential tasks (warmup). Guard-rail.
 MIN_SEQUENTIAL_DELAY = 15  # minutes
 
+# Mapping from BOOLEAN toggle names → TIME_BLOCKS keys
+BLOCK_KEYS = {
+    "block_matin":     "☀️ Matin (08h-16h) — Warmup",
+    "block_apresmidi":  "🌆 Après-midi (16h-22h) — Maintenance",
+    "block_soir":      "🌙 Soir (22h-04h) — Prime Time US",
+}
+
+
+def merge_time_blocks(active_keys: list[str]) -> list[dict]:
+    """Merge selected TIME_BLOCKS into contiguous ranges.
+
+    Args:
+        active_keys: list of TIME_BLOCKS keys that are enabled.
+
+    Returns:
+        List of {"start_hour": int, "end_hour": int} dicts, sorted by start_hour.
+        Adjacent blocks are fused into a single range.
+        E.g. Matin(8-16) + Après-midi(16-22) → [{"start_hour": 8, "end_hour": 22}]
+             Matin(8-16) + Soir(22-04)       → [{"start_hour": 8, "end_hour": 16},
+                                                  {"start_hour": 22, "end_hour": 4}]
+
+    Raises:
+        ValueError: if no blocks are selected.
+    """
+    if not active_keys:
+        raise ValueError("❌ Aucun créneau horaire sélectionné. Coche au moins un bloc.")
+
+    blocks = [TIME_BLOCKS[k] for k in active_keys if k in TIME_BLOCKS]
+    if not blocks:
+        raise ValueError("❌ Aucun créneau valide trouvé.")
+
+    # Sort by start_hour (put overnight blocks last)
+    blocks.sort(key=lambda b: b["start_hour"])
+
+    merged = [dict(blocks[0])]
+    for blk in blocks[1:]:
+        prev = merged[-1]
+        # Adjacent if previous end_hour == current start_hour
+        if prev["end_hour"] == blk["start_hour"]:
+            prev["end_hour"] = blk["end_hour"]
+        else:
+            merged.append(dict(blk))
+
+    return merged
+
+
+def merged_duration_minutes(ranges: list[dict]) -> int:
+    """Total duration in minutes across all merged ranges."""
+    total = 0
+    for r in ranges:
+        s, e = r["start_hour"], r["end_hour"]
+        total += (24 - s + e if e <= s else e - s) * 60
+    return total
+
 
 def block_duration_minutes(time_block: str) -> int:
     """Calculate the duration of a time block in minutes. Handles overnight blocks."""
