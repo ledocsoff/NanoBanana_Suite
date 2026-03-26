@@ -17,53 +17,79 @@ class NB_VideoSpoofer:
             "required": {
                 "input_folder": ("STRING", {
                     "default": "",
-                    "tooltip": "Dossier contenant les vidéos MC à spoofer (ex: /output)"
+                    "tooltip": "Dossier contenant les vidéos à spoofer"
                 }),
-                "output_folder": ("STRING", {
-                    "default": "",
-                    "tooltip": "Dossier de sortie pour les vidéos spoofées"
-                }),
-                "copies_per_video": ("INT", {
+                "number_of_folders": ("INT", {
                     "default": 1,
                     "min": 1,
-                    "max": 10,
-                    "tooltip": "Nombre de copies spoofées par vidéo source."
+                    "max": 50,
+                    "tooltip": "Nombre de sous-dossiers (1, 2, 3...) à créer avec une copie intégrale."
                 }),
             }
         }
 
-    def spoof(self, input_folder, output_folder, copies_per_video):
-        os.makedirs(output_folder, exist_ok=True)
+    def spoof(self, input_folder, number_of_folders):
+        input_folder = input_folder.strip().strip("'\"")
         
-        # Lister les vidéos dans le dossier input
+        if not os.path.exists(input_folder):
+            raise Exception(f"Le dossier source n'existe pas : {input_folder}")
+
+        # Le dossier maitre qui contiendra tous les lots (copies)
+        out_dirname = "_SPOOFED_BATCHES"
+        spoofed_base_path = os.path.join(input_folder, out_dirname)
+        os.makedirs(spoofed_base_path, exist_ok=True)
+
+        # Lister les vidéos (parcours récursif pour inclure les sous-dossiers "dance", "talking"...)
         video_extensions = ('.mp4', '.mov', '.webm')
-        videos = sorted([
-            f for f in os.listdir(input_folder) 
-            if f.lower().endswith(video_extensions)
-        ])
+        videos = []
+        for root, _, files in os.walk(input_folder):
+            rel_root = os.path.relpath(root, input_folder)
+            parts = rel_root.split(os.sep)
+            
+            # 1. Ignorer totalement le dossier de sortie _SPOOFED_BATCHES
+            if parts[0] == out_dirname:
+                continue
+                
+            # 2. Ignorer les anciens dossiers générés à la racine (1, 2, 3...) par mesure de sécurité
+            if parts[0].isdigit():
+                continue
+                
+            for f in files:
+                if f.lower().endswith(video_extensions):
+                    rel_path = os.path.relpath(os.path.join(root, f), input_folder)
+                    videos.append(rel_path)
+        
+        videos.sort()
         
         if not videos:
-            raise Exception(f"Aucune vidéo trouvée dans {input_folder}")
+            raise Exception(f"Aucune vidéo trouvée récursivement dans {input_folder}")
         
         total_generated = 0
         
-        for video_file in videos:
-            input_path = os.path.join(input_folder, video_file)
+        for folder_idx in range(1, number_of_folders + 1):
+            target_base_dir = os.path.join(spoofed_base_path, str(folder_idx))
+            os.makedirs(target_base_dir, exist_ok=True)
             
-            for copy_idx in range(copies_per_video):
-                # Toujours utiliser un nommage complètement aléatoire
-                # Cela permet un tri alphabétique totalement hasardeux
-                # vital pour la fonction 'Upload in order' de GeeLark
-                output_name = f"CapCut_{uuid.uuid4().hex[:8]}.mp4"
+            for rel_video_path in videos:
+                input_path = os.path.join(input_folder, rel_video_path)
                 
-                output_path = os.path.join(output_folder, output_name)
+                # Reconstruire l'arborescence (ex: 1/dance/)
+                rel_dir = os.path.dirname(rel_video_path)
+                target_sub_dir = os.path.join(target_base_dir, rel_dir)
+                os.makedirs(target_sub_dir, exist_ok=True)
+                
+                prefixes = ["CapCut", "IMG", "VID", "Snapchat", "InShot", "video", "WhatsApp_Video"]
+                output_name = f"{random.choice(prefixes)}_{uuid.uuid4().hex[:8]}.mp4"
+                output_path = os.path.join(target_sub_dir, output_name)
                 
                 self._spoof_single(input_path, output_path)
                 total_generated += 1
-                print(f"[NanaBanana] 🎭 Spoofed {total_generated}: {output_name}")
+                
+            print(f"🍌 [NB_VideoSpoofer] ✅ Lot {folder_idx}/ créé avec {len(videos)} vidéos spoofées.")
         
-        print(f"[NanaBanana] ✅ Spoofing terminé: {total_generated} vidéos dans {output_folder}")
-        return (output_folder,)
+        print(f"🍌 [NB_VideoSpoofer] 🎉 Spoofing terminé: {total_generated} vidéos totales réparties.")
+        # Return the master spoof folder so downstream nodes (if any) can find the output root
+        return (spoofed_base_path,)
 
     def _spoof_single(self, input_path, output_path):
         """Applique des micro-transformations aléatoires uniques à chaque vidéo"""
@@ -72,10 +98,13 @@ class NB_VideoSpoofer:
         brightness = random.uniform(-0.03, 0.03)      # ±3%
         contrast = random.uniform(0.97, 1.03)          # ±3%
         saturation = random.uniform(0.97, 1.03)        # ±3%
-        crop_px = random.randint(1, 4)                 # 1-4 pixels
-        crf = random.randint(20, 24)                   # Qualité variable
-        speed = random.uniform(1.01, 1.03)             # +1% à +3% vitesse
+        crop_pct = random.randint(2, 4) / 100.0        # 2-4% de crop (suffisant pour changer le hash, quasi invisible)
+        crf = random.randint(25, 28)                   # Sweet spot Instagram (2-3x plus léger, qualité identique sur mobile)
+        speed = random.uniform(1.01, 1.07)             # +1% à +7% vitesse
         volume = random.uniform(0.95, 1.05)            # ±5% volume
+        
+        preset = random.choice(["medium", "slow"])     # Pas de 'fast' : compression moins efficace pour la même qualité
+        profile = random.choice(["main", "high"])      # Pas de 'baseline' : compression dégradée sur appareils modernes
         
         # ── Metadata fake ──
         fake_encoders = [
@@ -94,8 +123,8 @@ class NB_VideoSpoofer:
         # ── Filtres FFmpeg ──
         v_filters = [
             f"eq=brightness={brightness}:contrast={contrast}:saturation={saturation}",
-            f"crop=iw-{crop_px*2}:ih-{crop_px*2}:{crop_px}:{crop_px}",
-            f"scale=iw+{crop_px*2}:ih+{crop_px*2}",  # Rescale à la taille originale
+            f"crop=iw*(1-2*{crop_pct:.2f}):ih*(1-2*{crop_pct:.2f}):iw*{crop_pct:.2f}:ih*{crop_pct:.2f}",
+            f"scale=1080:1920:flags=lanczos",        # Rescale HD imposé avec Lanczos
             f"setpts={1/speed:.4f}*PTS"              # Vitesse vidéo
         ]
         a_filters = [
@@ -124,7 +153,8 @@ class NB_VideoSpoofer:
             "-metadata", f"creation_time={fake_date}",# Fake date
             "-c:v", "libx264",
             "-crf", str(crf),
-            "-preset", "medium",
+            "-preset", preset,
+            "-profile:v", profile,
             "-c:a", "aac",
             "-b:a", "192k",
             "-y",                                     # Overwrite

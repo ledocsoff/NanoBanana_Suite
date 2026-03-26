@@ -13,7 +13,7 @@ from typing import Any
 # GeeLark reads Paris time, so what you see = what GeeLark executes.
 
 TIME_BLOCKS = {
-    "☀️ Matin (08h-16h) — Warmup":              {"start_hour": 8,  "end_hour": 16},
+    "☀️ Matin (04h-16h) — Warmup":              {"start_hour": 4,  "end_hour": 16},
     "🌆 Après-midi (16h-22h) — Maintenance":     {"start_hour": 16, "end_hour": 22},
     "🌙 Soir (22h-04h) — Prime Time US":         {"start_hour": 22, "end_hour": 4},
 }
@@ -25,7 +25,7 @@ MIN_SEQUENTIAL_DELAY = 15  # minutes
 
 # Mapping from BOOLEAN toggle names → TIME_BLOCKS keys
 BLOCK_KEYS = {
-    "block_matin":     "☀️ Matin (08h-16h) — Warmup",
+    "block_matin":     "☀️ Matin (04h-16h) — Warmup",
     "block_apresmidi":  "🌆 Après-midi (16h-22h) — Maintenance",
     "block_soir":      "🌙 Soir (22h-04h) — Prime Time US",
 }
@@ -74,6 +74,8 @@ def merged_duration_minutes(ranges: list[dict]) -> int:
     total = 0
     for r in ranges:
         s, e = r["start_hour"], r["end_hour"]
+        # Note: {start_hour: 4, end_hour: 4} means "full 24h from 04:00 to 04:00 next day"
+        # NOT "zero duration". This is by design when all blocks are logically merged.
         total += (24 - s + e if e <= s else e - s) * 60
     return total
 
@@ -129,7 +131,27 @@ COMMON_COLS = {
 }
 
 
-def load_template(path: str):
+def validate_template_type(ws, expected_type: str) -> bool:
+    """Validate that the worksheet matches the expected GeeLark template type based on column headers."""
+    headers = [str(cell.value).lower() if cell.value else "" for cell in next(ws.iter_rows(max_row=1))]
+    col5 = headers[4] if len(headers) > 4 else ""
+    
+    actual_type = "post_video/carousel"
+    if "nickname" in col5 or "username" in col5:
+        actual_type = "edit_profile"
+    elif "video" in col5 or "numberofvideo" in col5.replace(" ", ""):
+        actual_type = "account_warmup"
+        
+    # Leniency for post templates since scheduler defaults to it
+    if expected_type == "post_reel" or "post" in expected_type:
+        if "post" not in actual_type:
+            raise ValueError(f"❌ Erreur: Ce noeud attend un fichier 'Post Reel' mais a reçu '{actual_type}'.")
+    elif actual_type != expected_type:
+        raise ValueError(f"❌ Erreur: Ce noeud attend un fichier '{expected_type}' mais a reçu '{actual_type}'.\nVérifie que tu as sélectionné le bon export dans GeeLark !")
+    return True
+
+
+def load_template(path: str, expected_type: str = None):
     """Load a GeeLark XLSX template and return (workbook, data_rows)."""
     import openpyxl
 
@@ -141,6 +163,10 @@ def load_template(path: str):
 
     wb = openpyxl.load_workbook(path)
     ws = wb.active
+    
+    if expected_type:
+        validate_template_type(ws, expected_type)
+        
     data_rows = list(ws.iter_rows(min_row=2))
     return wb, data_rows
 
@@ -156,6 +182,11 @@ def fill_column(rows, col_index: int, values: list[str], randomize: bool = True)
     """
     if not values:
         return
+
+    if len(values) > 0 and len(rows) > 0:
+        ratio = len(rows) / len(values)
+        if ratio > 3:
+            print(f"⚠️ [Attention] Seulement {len(values)} valeurs fournies pour {len(rows)} comptes (Duplication x{ratio:.1f})")
 
     pool = list(values)
     while len(pool) < len(rows):

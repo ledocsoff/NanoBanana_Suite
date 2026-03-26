@@ -179,17 +179,22 @@ class NB_EmojiBioGen:
 
     def _build_full(self, pool, templates, kaomoji_list, standalone, style) -> str:
         """Three lines: decorative sandwich."""
+        max_dedup = 20  # Safety: avoid infinite loop if pool is tiny
         line1 = self._build_short(pool, templates, kaomoji_list, standalone, style)
         line2 = self._build_short(pool, templates, kaomoji_list, standalone, style)
         line3 = self._build_short(pool, templates, kaomoji_list, standalone, style)
 
-        # Ensure all 3 are different
+        # Ensure all 3 are different (with safety limit)
         seen = {line1}
-        while line2 in seen:
+        attempts = 0
+        while line2 in seen and attempts < max_dedup:
             line2 = self._build_short(pool, templates, kaomoji_list, standalone, style)
+            attempts += 1
         seen.add(line2)
-        while line3 in seen:
+        attempts = 0
+        while line3 in seen and attempts < max_dedup:
             line3 = self._build_short(pool, templates, kaomoji_list, standalone, style)
+            attempts += 1
 
         return f"{line1}\n{line2}\n{line3}"
 

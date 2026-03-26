@@ -183,3 +183,8 @@ class NanoBananaChooser:
         # Stack back (B,H,W,C)
         final_tensor = torch.stack(selected_tensors)
         return (final_tensor, len(selected_tensors))
+
+    @classmethod
+    def IS_CHANGED(cls, **kwargs):
+        import time
+        return time.time()

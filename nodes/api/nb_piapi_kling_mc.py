@@ -2,6 +2,22 @@ import requests
 import base64
 import time
 import os
+import shutil
+
+
+def _move_to_failed(source_path, output_folder, done_folder):
+    """Move a source video to a /failed subfolder. Uses shutil.move for cross-device safety."""
+    if not source_path or not os.path.exists(source_path):
+        return
+    if done_folder:
+        failed_folder = done_folder.replace("done", "failed") if "done" in done_folder else os.path.join(os.path.dirname(done_folder), "failed")
+    else:
+        failed_folder = os.path.join(os.path.dirname(output_folder), "failed")
+    os.makedirs(failed_folder, exist_ok=True)
+    dest = os.path.join(failed_folder, os.path.basename(source_path))
+    shutil.move(source_path, dest)
+    print(f"[NanaBanana] 📦 Vidéo source déplacée vers : {failed_folder}")
+
 
 class NB_PiAPIKlingMotionControl:
     CATEGORY = "NanaBanana/API"
@@ -65,18 +81,7 @@ class NB_PiAPIKlingMotionControl:
             print(f"[NanaBanana] ⚠️ Erreur lors de la vérification des dimensions : {e}")
 
         if failed_swap:
-            if source_video_path and os.path.exists(source_video_path):
-                failed_folder = output_folder
-                if done_folder:
-                    failed_folder = done_folder.replace("done", "failed") if "done" in done_folder else os.path.join(os.path.dirname(done_folder), "failed")
-                else:
-                    failed_folder = os.path.join(os.path.dirname(output_folder), "failed")
-                    
-                os.makedirs(failed_folder, exist_ok=True)
-                dest = os.path.join(failed_folder, os.path.basename(source_video_path))
-                os.rename(source_video_path, dest)
-                print(f"[NanaBanana] 📦 Vidéo source déplacée vers : {failed_folder} suite à l'échec du FaceSwap")
-                
+            _move_to_failed(source_video_path, output_folder, done_folder)
             return ("", video_filename)
 
         try:
@@ -169,19 +174,7 @@ class NB_PiAPIKlingMotionControl:
             if "TEMP_compressed_" in video_path and os.path.exists(video_path):
                 os.remove(video_path)
                 
-            if source_video_path and os.path.exists(source_video_path):
-                # Déplacement vers /failed
-                failed_folder = output_folder
-                if done_folder:
-                    failed_folder = done_folder.replace("done", "failed") if "done" in done_folder else os.path.join(os.path.dirname(done_folder), "failed")
-                else:
-                    failed_folder = os.path.join(os.path.dirname(output_folder), "failed")
-                    
-                os.makedirs(failed_folder, exist_ok=True)
-                dest = os.path.join(failed_folder, os.path.basename(source_video_path))
-                os.rename(source_video_path, dest)
-                print(f"[NanaBanana] 📦 Vidéo source déplacée vers : {failed_folder}")
-                
+            _move_to_failed(source_video_path, output_folder, done_folder)
             return ("", video_filename)
 
         # 6. Nettoyage et Déplacement de la source (Success)
@@ -191,7 +184,7 @@ class NB_PiAPIKlingMotionControl:
         if source_video_path and done_folder and os.path.exists(source_video_path):
             os.makedirs(done_folder, exist_ok=True)
             dest = os.path.join(done_folder, os.path.basename(source_video_path))
-            os.rename(source_video_path, dest)
+            shutil.move(source_video_path, dest)
             print(f"[NanaBanana] 📦 Moved source video to {done_folder}")
 
         return (output_path, video_filename)

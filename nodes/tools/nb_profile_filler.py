@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import os
 import random
-import sys
 import importlib.util
 
 # Direct import of xlsx_utils to avoid shared/__init__.py (which pulls in torch via gemini_client)
@@ -86,7 +85,7 @@ class NB_ProfileFiller:
 
         schema = GEELARK_SCHEMAS["edit_profile"]
 
-        wb, rows = load_template(template_file)
+        wb, rows = load_template(template_file, expected_type="edit_profile")
         total = len(rows)
 
         # Auto-generate output filename

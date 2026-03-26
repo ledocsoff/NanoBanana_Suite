@@ -56,7 +56,7 @@ class NB_AccountWarmupFiller:
                 }),
                 "block_matin": ("BOOLEAN", {
                     "default": True,
-                    "tooltip": "☀️ Matin (08h-16h) — Warmup"
+                    "tooltip": "☀️ Matin (04h-16h) — Warmup"
                 }),
                 "block_apresmidi": ("BOOLEAN", {
                     "default": True,
@@ -106,10 +106,8 @@ class NB_AccountWarmupFiller:
         return False
 
     def _next_block_start(self, dt, merged_ranges):
-        """Find the next valid block start from the given datetime.
-        If current time is outside all ranges, jump to the next range start.
-        Handles wrapping to the next day."""
-        # Try same day first, then next day
+        """Find the exact next valid block start from the given datetime."""
+        candidates = []
         for day_offset in range(0, 3):
             check_date = dt.date() + timedelta(days=day_offset)
             for rng in merged_ranges:
@@ -117,8 +115,12 @@ class NB_AccountWarmupFiller:
                     hour=rng["start_hour"], minute=random.randint(0, 10)
                 )
                 if candidate > dt:
-                    return candidate
-        # Fallback: next day, first range
+                    candidates.append(candidate)
+                    
+        if candidates:
+            return min(candidates)
+
+        # Absolute Fallback: next day, first range
         next_day = dt.date() + timedelta(days=1)
         return datetime.combine(next_day, datetime.min.time()).replace(
             hour=merged_ranges[0]["start_hour"], minute=random.randint(0, 10)
@@ -171,8 +173,8 @@ class NB_AccountWarmupFiller:
             print(f"🍌 [NB_AccountWarmupFiller] ⚠️ Les tâches vont déborder sur les jours suivants.")
             ideal_delay = MIN_SEQUENTIAL_DELAY
 
-        # Variation range: ±15% of ideal delay, clamped to ±5 min max
-        variation = min(int(ideal_delay * 0.15), 5)
+        # Variation range: ±15% of ideal delay, clamped to ±5 min max, guaranteed at least 1 min
+        variation = min(max(1, int(ideal_delay * 0.15)), 5)
 
         # Build start datetime — first merged range start hour
         base_date = datetime.now().date() + timedelta(days=start_days_from_now)

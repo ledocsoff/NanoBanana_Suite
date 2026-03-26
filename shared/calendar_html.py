@@ -5,6 +5,7 @@ Generates a standalone HTML calendar from scheduling events.
 Extracted from NB_GeeLarkScheduler for maintainability.
 """
 
+import html
 from datetime import datetime, timedelta
 from collections import defaultdict, Counter
 
@@ -43,17 +44,26 @@ def build_calendar_html(events: list[dict], base_date, days_spread: int) -> str:
 
     total = len(events)
     days_with_posts = len(by_date)
+    
+    # 🌙 Cosmetic fix: if posts span more calendar days than requested, it's an overnight block
+    if days_with_posts > days_spread and days_spread > 0:
+        active_label = f"<strong>{days_spread}</strong> nuits actives <span style='font-size:0.85em; opacity:0.75; font-weight:normal;'>({days_with_posts} j. calendaires)</span>"
+    else:
+        active_label = f"<strong>{days_with_posts}</strong> jours actifs / <strong>{days_spread}</strong>"
 
     # Legend HTML
     legend_html = "".join(
-        f'<span class="legend-item"><span class="legend-dot" style="background:{color_map[acc]}"></span>{acc}</span>'
+        f'<span class="legend-item"><span class="legend-dot" style="background:{color_map[acc]}"></span>{html.escape(acc)}</span>'
         for acc in all_accounts
     )
 
     # Stats per account
     acc_counts = Counter(ev["account"] for ev in events)
     stats_rows = "".join(
-        f'<tr><td><span class="dot" style="background:{color_map[acc]}"></span>{acc}</td>'
+        f'<tr><td><span class="dot" style="background:{color_map[acc]}"></span>{html.escape(acc)}</td>'
+        f'<td>{cnt}</td><td>{round(cnt/max(1, days_spread), 1) if days_spread > 0 else cnt}/nuit</td></tr>'
+        if days_with_posts > days_spread else
+        f'<tr><td><span class="dot" style="background:{color_map[acc]}"></span>{html.escape(acc)}</td>'
         f'<td>{cnt}</td><td>{round(cnt/days_with_posts, 1) if days_with_posts else 0}/jour</td></tr>'
         for acc, cnt in sorted(acc_counts.items())
     )
@@ -78,11 +88,13 @@ def build_calendar_html(events: list[dict], base_date, days_spread: int) -> str:
         for ev in day_events:
             caption_short = (ev["caption"][:55] + "…") if ev["caption"] and len(ev["caption"]) > 55 else (ev["caption"] or "")
             caption_short = caption_short.replace("\n", " ")
+            safe_account = html.escape(ev['account'])
+            safe_caption = html.escape(caption_short)
             events_html += f"""
             <div class="event" style="border-left: 3px solid {ev['color']}; background: {ev['color']}18;">
                 <div class="event-time">{ev['time'].strftime('%H:%M')}</div>
-                <div class="event-account" style="color:{ev['color']}">{ev['account']}</div>
-                <div class="event-caption">{caption_short}</div>
+                <div class="event-account" style="color:{ev['color']}">{safe_account}</div>
+                <div class="event-caption">{safe_caption}</div>
             </div>"""
 
         empty_class = " empty" if not day_events else ""
@@ -354,7 +366,7 @@ def build_calendar_html(events: list[dict], base_date, days_spread: int) -> str:
   </div>
   <div class="meta">
     <div class="stat-pill"><strong>{total}</strong> publications</div>
-    <div class="stat-pill"><strong>{days_with_posts}</strong> jours actifs / <strong>{days_spread}</strong></div>
+    <div class="stat-pill">{active_label}</div>
     <div class="stat-pill"><strong>{len(all_accounts)}</strong> comptes</div>
   </div>
 </div>
