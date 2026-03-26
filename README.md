@@ -108,25 +108,42 @@ Le bloc Soir est un **bloc overnight** : il commence à 22h et finit à 04h du m
 **But** : Rendre chaque copie d'une vidéo techniquement unique pour éviter la détection de doublons par les algorithmes Instagram/TikTok.
 
 **Comment ça marche** :
-1. Vous placez vos vidéos sources dans un dossier
-2. Le nœud génère X copies de chaque vidéo avec des micro-transformations aléatoires
-3. Chaque copie a un hash unique → les plateformes les voient comme des vidéos différentes
+1. Vous placez vos vidéos sources dans un dossier (supporte les sous-dossiers : `dance/`, `talking/`, etc.)
+2. Le nœud génère N **lots complets** de copies spoofées dans des sous-dossiers numérotés (`1/`, `2/`, `3/`...)
+3. Les lots sont isolés dans un dossier `_SPOOFED_BATCHES/` à la racine du dossier source
+4. L'arborescence des sous-dossiers est parfaitement conservée dans chaque lot
+5. Chaque copie a un hash unique → les plateformes les voient comme des vidéos différentes
 
 **Transformations appliquées (imperceptibles à l'œil nu)** :
 - Luminosité ±3%, Contraste ±3%, Saturation ±3%
-- Crop aléatoire de 1 à 4 pixels (puis re-scale à la taille originale)
-- Vitesse modifiée de +1% à +3%
+- Crop aléatoire 2-4% (puis re-scale 1080x1920 via Lanczos)
+- Vitesse modifiée de +1% à +7%
 - Volume audio ±5%
-- CRF (qualité compression) : aléatoire entre 20 et 24
+- CRF 25-28 (sweet spot Instagram — 2-3x plus léger, qualité identique sur mobile)
+- Preset `medium` ou `slow` uniquement (compression optimale)
+- Profil x264 `main` ou `high` (pas de `baseline`)
 - Métadonnées entièrement remplacées (faux encoder, fausse date de création)
-- Nom de fichier aléatoire au format `CapCut_XXXXXXXX.mp4`
+- Nom de fichier aléatoire avec préfixe variable : `CapCut_`, `IMG_`, `VID_`, `Snapchat_`, `InShot_`, `WhatsApp_Video_`
 
 **Paramètres** :
 | Paramètre | Description |
 |-----------|-------------|
-| `input_folder` | Dossier contenant les vidéos sources (.mp4, .mov, .webm) |
-| `output_folder` | Dossier de sortie pour les copies spoofées |
-| `copies_per_video` | Nombre de copies uniques par vidéo source (1-10) |
+| `input_folder` | Dossier contenant les vidéos sources (.mp4, .mov, .webm) — parcours récursif |
+| `number_of_folders` | Nombre de lots (sous-dossiers 1, 2, 3...) à générer (1-50) |
+
+**Structure de sortie** :
+```
+mes_videos/
+├── dance/          ← sources (intactes)
+├── talking/        ← sources (intactes)
+└── _SPOOFED_BATCHES/
+    ├── 1/
+    │   ├── dance/   ← copies spoofées
+    │   └── talking/ ← copies spoofées
+    └── 2/
+        ├── dance/
+        └── talking/
+```
 
 **Nécessite** : FFmpeg installé sur la machine.
 
@@ -139,38 +156,48 @@ Le bloc Soir est un **bloc overnight** : il commence à 22h et finit à 04h du m
 **Comment ça marche** :
 1. Exportez un fichier `.xlsx` depuis GeeLark (Edit Table → Export)
 2. Branchez le chemin du fichier dans le nœud
-3. Le nœud détecte automatiquement le type de template (Post Reel, Carousel, Edit Profile, Warmup)
-4. Il remplit la colonne "Release Time" avec des horaires aléatoires dans le bloc choisi
+3. Le nœud détecte automatiquement le type de template (Post Reel, Carousel, Edit Profile)
+4. Il remplit la colonne "Release Time" avec des horaires distribués via **Segmented Jitter** (couverture uniforme de toute la plage horaire)
 5. Il remplit la colonne "Caption" avec les captions fournies (ou des captions par défaut)
 6. Il génère 2 fichiers : `_scheduled.xlsx` (à réimporter dans GeeLark) + `_calendar.html` (planning visuel)
+7. Si l'input provient d'un Profile Filler (`_filled.xlsx`), le fichier intermédiaire est **auto-supprimé** après succès
 
 **Auto-détection du type de template** :
-Le nœud lit les en-têtes Excel pour savoir automatiquement quel type de template vous utilisez. Pas besoin de le préciser manuellement :
+Le nœud lit les en-têtes Excel pour savoir automatiquement quel type de template vous utilisez :
 - Si colonne 5 contient "nickname" → `edit_profile`
 - Si colonne 5 contient "video" → `account_warmup`
 - Sinon → `post_video/carousel`
 
-**Anti-collision cross-account** :
-Quand vous avez 100 comptes sur le même bloc horaire (ex: 22h-04h), le Scheduler s'assure qu'aucun n'a 2 posts au même moment :
-- Il maintient une liste globale de tous les horaires déjà assignés par jour
-- Chaque nouveau créneau doit respecter `min_gap_minutes` (défaut: 30 min) par rapport à TOUS les autres comptes
+**Segmented Jitter (Phase 0)** :
+Au lieu de tirer des créneaux au hasard (risque de clustering temporel), le Scheduler découpe la fenêtre horaire en N segments égaux et place un post aléatoirement dans chaque segment. Résultat : une distribution organique et uniforme sur toute la plage, crédible comme un pattern de publication humain.
 
-**Distribution intelligente** :
-Pour N tâches sur D jours, le Scheduler répartit ~N/D tâches par jour avec une variation aléatoire de ±1 pour éviter les patterns trop réguliers.
+**Anti-collision cross-account** :
+Quand vous avez 100 comptes sur le même bloc horaire, le Scheduler respecte strictement `max_simultaneous` :
+- `max_simultaneous=1` : aucun chevauchement, chaque post est isolé dans sa propre fenêtre de `min_gap_minutes`
+- `max_simultaneous=3` : jusqu'à 3 posts autorisés dans le même rayon temporel
+
+**Capacité dynamique** :
+Le Scheduler calcule automatiquement la capacité réelle par jour (`total_minutes / min_gap × max_simultaneous`). Si `days_spread` est trop court pour le volume de tâches, il s'ajuste automatiquement avec un warning explicatif.
+
+**Distribution Bresenham (Edit Profile)** :
+Pour les templates "1 tâche par compte", les comptes sont distribués uniformément sur les jours via un algorithme de type Bresenham (ex: 29 comptes / 7 jours = 5-4-4-4-4-4-4).
 
 **Paramètres** :
 | Paramètre | Description | Défaut |
 |-----------|-------------|--------|
 | `template_file` | Chemin du .xlsx exporté de GeeLark | — |
-| `time_block` | Plage horaire Paris | 🌙 Soir (22h-04h) |
+| `block_matin` | ☀️ Activer le bloc Matin (04h-16h) | ✅ |
+| `block_apresmidi` | 🌆 Activer le bloc Après-midi (16h-22h) | ✅ |
+| `block_soir` | 🌙 Activer le bloc Soir (22h-04h) | ❌ |
 | `start_days_from_now` | Début dans X jours (0=aujourd'hui) | 1 |
 | `captions` | Captions (optionnel, depuis StaticCaptioner) | Auto-générées |
 | `days_spread` | Nombre de jours de répartition | 7 |
 | `min_gap_minutes` | Espacement minimum entre 2 posts | 30 |
+| `max_simultaneous` | Tolérance de chevauchement (1 = strict) | 3 |
 
 **Calendrier HTML** :
 Le fichier `_calendar.html` généré est un dashboard dark mode responsive qui affiche :
-- Chaque jour avec ses événements
+- Chaque jour avec ses événements (affiche "nuits actives" pour les blocs overnight)
 - Code couleur par compte (couleurs HSL dynamiques, supporte 100+ comptes)
 - Statistiques par compte (nombre de posts, moyenne par jour)
 - Badge compteur par jour
@@ -295,7 +322,11 @@ Si l'espacement calculé est inférieur à 15 minutes (trop de comptes pour le b
   │ Profile Filler   │ ← nicknames, usernames, link_url, link_title
   └──────┬──────────┘
          │
-  📄 _filled.xlsx → Import GeeLark
+  ┌──────▼──────────────┐
+  │ GeeLark Scheduler    │ → scheduling + 🧹 auto-suppression du _filled.xlsx
+  └──────┬──────────────┘
+         │
+  📄 _scheduled.xlsx + 📊 _calendar.html → Import GeeLark
 ```
 
 #### Workflow 3 : Publication de Reels/Carousel
@@ -305,7 +336,7 @@ Si l'espacement calculé est inférieur à 15 minutes (trop de comptes pour le b
   └──────┬──────────┘
          │ captions (séparateur ---)
   ┌──────▼──────────────┐
-  │ GeeLark Scheduler    │ ← template + time_block + days_spread
+  │ GeeLark Scheduler    │ ← template + blocs horaires + days_spread
   └──────┬──────────────┘
          │
   📄 _scheduled.xlsx + 📊 _calendar.html
@@ -318,10 +349,10 @@ Si l'espacement calculé est inférieur à 15 minutes (trop de comptes pour le b
   └──────────────┘     └───────┬───────┘
                                │
   ┌────────────────────────────▼──┐
-  │ Video Spoofer                  │ → copies uniques (hash différent)
+  │ Video Spoofer                  │ → lots numérotés dans _SPOOFED_BATCHES/
   └────────────┬──────────────────┘
                │
-  📁 spoofed/ → Upload GeeLark
+  📁 _SPOOFED_BATCHES/1/, 2/, 3/... → Upload GeeLark
 ```
 
 ---
@@ -370,8 +401,9 @@ Tous les nœuds qui produisent des listes (bios, captions) utilisent le séparat
 
 ## 💡 Notes sur le développement
 
-- **Sécurité** : Aucune donnée personnelle, chemin d'ordinateur local ou clé API n'est hardcodée dans cette suite.
-- **Ergonomie** : Conçue avec peu d'inputs "Texte" et beaucoup de curseurs (Sliders) et de Menus déroulants (Dropdowns) pour éviter toute erreur de syntaxe côté utilisateur.
+- **Sécurité** : Aucune donnée personnelle, chemin d'ordinateur local ou clé API n'est hardcodée dans cette suite. Les noms de comptes dans le calendrier HTML sont échappés (XSS).
+- **Ergonomie** : Conçue avec peu d'inputs "Texte" et beaucoup de curseurs (Sliders) et de Menus déroulants (Dropdowns). Les fichiers intermédiaires (`_filled.xlsx`) sont auto-supprimés après traitement.
 - **Support** : L'extension s'adapte automatiquement à son emplacement (tous les imports des classes sont relatifs (`.nodes.api...`)).
 - **Anti-DST** : Le système est insensible aux changements d'heure saisonniers car il travaille en heure locale de Paris constante, sans conversion de timezone.
-- **Scalabilité** : Testé et conçu pour gérer 100+ comptes simultanément sur les workflows de scheduling.
+- **Anti-Bot** : Distribution temporelle Segmented Jitter, noms de fichiers à préfixes aléatoires, métadonnées falsifiées, crop/compression variables.
+- **Scalabilité** : Testé et conçu pour gérer 100+ comptes simultanément sur les workflows de scheduling avec calcul dynamique de capacité.
