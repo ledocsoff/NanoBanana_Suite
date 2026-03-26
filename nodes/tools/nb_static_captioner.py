@@ -1,17 +1,41 @@
 """
-NB_StaticCaptioner — Deterministic, ultra-generic Gen Z caption randomizer
+NB_StaticCaptioner — Deterministic caption randomizer for Reels & Carousel
 ==========================================================================
-Generates lowercase, extremely generic captions (e.g. "just me :)") with 0 APIs.
-Applies a strict 30% chance to append 1 or 2 random hashtags from a pool.
-Guarantees:
-- ALL lowercase (forced in Python)
-- No AI hallucinations (emojis, over-enthusiasm)
-- Blazingly fast (0 API calls)
+Generates lowercase, generic captions with 0 APIs.
+Supports two content types with distinct internal pools:
+  - reel: short Gen Z captions
+  - carousel: swipe-friendly captions
+No API calls — deterministic generation from internal pools.
 """
 
 from __future__ import annotations
 
 import random
+
+
+# Internal caption pools
+_REEL_CAPTIONS = [
+    "and now?", "at least i tried", "be honest", "can you explain?",
+    "casual.", "catching the vibe?", "couldn't resist", "current mood",
+    "did what had to be done", "didn't even try", "do you like it?", "don't ask.",
+    "effortless", "feeling myself today", "good mood today", "how was that?",
+    "i like this trend", "i tried ok", "i want this..", "i'm in shock..",
+    "i'm lucky?", "i'm your type?", "in my element", "just for fun",
+    "living for this", "looking at what?", "making it look easy", "not your average",
+    "obsessed.", "oh?", "ok?", "oops.", "rate this 1-10", "simple girl",
+    "wait for it..", "what am i doing", "what's going on?", "why not.", "why not?"
+]
+
+_CAROUSEL_CAPTIONS = [
+    "photo dump", "core memory unlocked", "dump", "lately",
+    "a series of events", "in order", "swipe for a surprise",
+    "life lately", "random but here", "highlights", "some moments",
+    "mini dump", "kept these for you", "weekend dump", "camera roll cleanup",
+    "small things", "snap snap", "some favorites", "life in frames",
+    "memories i'm keeping", "had to share", "unfiltered", "a few things",
+    "slide through", "in no particular order", "all the vibes",
+    "take your pick", "some stuff", "brain dump", "just a few",
+]
 
 
 class NB_StaticCaptioner:
@@ -22,53 +46,17 @@ class NB_StaticCaptioner:
     OUTPUT_NODE = False
 
     DESCRIPTION = (
-        "Generates highly generic, lowercase-only captions from a fixed list. "
-        "Appends random hashtags from an allowed list exactly 30% of the time. "
-        "No AI used, guaranteeing 0 API latency and 0 unrequested emojis."
+        "Generates lowercase captions from internal reel/carousel pools. "
+        "Hashtags appended randomly based on probability."
     )
 
     @classmethod
     def INPUT_TYPES(cls):
-        # A curated list of ultra-generic, non-capitalized Gen Z girl captions
-        default_captions = (
-            "just me :)\n"
-            "anyway...\n"
-            "just because\n"
-            "too good\n"
-            "night out\n"
-            "mood\n"
-            "vibes\n"
-            "not me doing this\n"
-            "idk\n"
-            "hi\n"
-            "late night\n"
-            "always\n"
-            "nevermind\n"
-            "obsessed\n"
-            "a moment\n"
-            "living\n"
-            "tbh\n"
-            "felt cute\n"
-            "weekend\n"
-            "this\n"
-            "the usual\n"
-            "out and about\n"
-            "yep\n"
-            ";)\n"
-            "<3\n"
-            "xoxo\n"
-            "for you\n"
-            "why not\n"
-            "same\n"
-            "on repeat"
-        )
-
         return {
             "required": {
-                "base_captions": ("STRING", {
-                    "default": default_captions,
-                    "multiline": True,
-                    "tooltip": "Une caption par ligne. Le nœud piochera au hasard."
+                "content_type": (["reel", "carousel"], {
+                    "default": "reel",
+                    "tooltip": "reel = captions courtes Gen Z. carousel = captions 'photo dump' pour swipe."
                 }),
                 "hashtag_pool": ("STRING", {
                     "default": "fyp, model, reels, explore, viral, explorepage, beauty",
@@ -85,15 +73,15 @@ class NB_StaticCaptioner:
             }
         }
 
-    def generate(self, base_captions: str, hashtag_pool: str, hashtag_probability: float) -> tuple[str]:
-        # Generate a massive batch instantly. The Scheduler will only consume what it needs.
+    def generate(self, content_type: str, hashtag_pool: str, hashtag_probability: float) -> tuple[str]:
         count = 500
-        print(f"[NB_StaticCaptioner] Generating a batch of {count} pool captions...")
 
-        # Parse base captions
-        raw_lines = [line.strip() for line in base_captions.split('\n') if line.strip()]
+        raw_lines = list(_REEL_CAPTIONS if content_type == "reel" else _CAROUSEL_CAPTIONS)
+
         if not raw_lines:
-            raw_lines = ["just me :)", "mood"]
+            raw_lines = ["mood"]
+
+        print(f"[NB_StaticCaptioner] Generating {count} captions (source={content_type}, pool={len(raw_lines)})...")
 
         # Parse hashtags
         raw_tags = [tag.strip().strip('#') for tag in hashtag_pool.split(',') if tag.strip()]
@@ -101,31 +89,23 @@ class NB_StaticCaptioner:
             raw_tags = ["fyp"]
 
         results = []
-
         for _ in range(count):
-            # Select random base caption
             cap = random.choice(raw_lines)
 
-            # Apply 30% hashtag rule
             if random.random() < hashtag_probability:
-                # 1 or 2 tags
                 num_tags = random.randint(1, min(2, len(raw_tags)))
                 chosen_tags = random.sample(raw_tags, num_tags)
                 tags_str = " ".join([f"#{t}" for t in chosen_tags])
                 cap = f"{cap}\n\n{tags_str}"
 
-            # FORCE lowercase everywhere (the exact user spec: no caps)
             cap = cap.lower()
-
             results.append(cap)
 
-        # Output with the '---' separator understood by the scheduler
         final_string = "\n---\n".join(results)
-        print(f"[NB_StaticCaptioner] ✓ Generated {count} static captions successfully")
+        print(f"[NB_StaticCaptioner] ✓ Generated {count} {content_type} captions")
         return (final_string,)
 
     @classmethod
     def IS_CHANGED(cls, **kwargs):
-        # Always output new ones based on random seeds
         import time
         return time.time()

@@ -134,3 +134,8 @@ class NB_VideoSpoofer:
         result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0:
             raise Exception(f"FFmpeg error: {result.stderr[:500] if result.stderr else 'Unknown error'}")
+
+    @classmethod
+    def IS_CHANGED(cls, **kwargs):
+        import time
+        return time.time()
