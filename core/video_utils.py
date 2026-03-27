@@ -55,16 +55,25 @@ def extract_frame(video_path: str, frame_index: int = 0) -> np.ndarray:
     finally:
         cap.release()
 
-def get_video_files(folder: str, extensions: tuple = (".mp4", ".mov", ".webm")) -> list:
+def get_video_files(folder: str, extensions: tuple = (".mp4", ".mov", ".webm"), recursive: bool = False) -> list:
+    """List video files in a folder. If recursive=True, walks all subdirectories."""
     video_files = []
     exts = tuple(ext.lower() for ext in extensions)
-    
-    if os.path.exists(folder):
+
+    if not os.path.exists(folder):
+        return video_files
+
+    if recursive:
+        for root, _dirs, files in os.walk(folder):
+            for file in files:
+                if file.lower().endswith(exts):
+                    video_files.append(os.path.abspath(os.path.join(root, file)))
+    else:
         for file in os.listdir(folder):
             path = os.path.join(folder, file)
             if os.path.isfile(path) and file.lower().endswith(exts):
                 video_files.append(os.path.abspath(path))
-                
+
     return sorted(video_files)
 
 def compute_aspect_ratio(width: int, height: int) -> str:

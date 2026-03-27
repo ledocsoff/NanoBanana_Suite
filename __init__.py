@@ -18,6 +18,7 @@ from .nodes.direction.chooser import NanoBananaChooser
 
 # --- Face ---
 from .nodes.face.swap import NanoBananaSwap
+from .nodes.face.quality_gate import NanoBananaQualityGate
 
 # --- Post-process ---
 from .nodes.postprocess.output import NanoBananaPreview, NanoBananaCleanSave
@@ -57,6 +58,7 @@ NODE_CLASS_MAPPINGS = {
     
     # Face
     "NanoBananaSwap": NanoBananaSwap,
+    "NanoBananaQualityGate": NanoBananaQualityGate,
     
     # Post-process
     "NanoBananaPreview": NanoBananaPreview,
@@ -96,6 +98,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     
     # Face
     "NanoBananaSwap": "🍌 Swap",
+    "NanoBananaQualityGate": "🍌 Quality Gate",
     
     # Post-process
     "NanoBananaPreview": "🍌 Preview",

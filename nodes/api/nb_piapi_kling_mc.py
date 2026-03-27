@@ -5,14 +5,19 @@ import os
 import shutil
 
 
-def _move_to_failed(source_path, output_folder, done_folder):
-    """Move a source video to a /failed subfolder. Uses shutil.move for cross-device safety."""
+def _move_to_failed(source_path, output_folder, done_folder, relative_subfolder=""):
+    """Move a source video to a /failed subfolder, preserving relative structure."""
     if not source_path or not os.path.exists(source_path):
         return
     if done_folder:
-        failed_folder = done_folder.replace("done", "failed") if "done" in done_folder else os.path.join(os.path.dirname(done_folder), "failed")
+        # Replace only the last component: /path/to/done → /path/to/failed
+        parent = os.path.dirname(done_folder)
+        last_part = os.path.basename(done_folder)
+        failed_part = last_part.replace("done", "failed") if "done" in last_part else "failed"
+        failed_base = os.path.join(parent, failed_part)
     else:
-        failed_folder = os.path.join(os.path.dirname(output_folder), "failed")
+        failed_base = os.path.join(os.path.dirname(output_folder), "failed")
+    failed_folder = os.path.join(failed_base, relative_subfolder) if relative_subfolder else failed_base
     os.makedirs(failed_folder, exist_ok=True)
     dest = os.path.join(failed_folder, os.path.basename(source_path))
     shutil.move(source_path, dest)
@@ -56,12 +61,23 @@ class NB_PiAPIKlingMotionControl:
                 }),
                 "source_video_path": ("STRING", {"default": ""}),
                 "done_folder": ("STRING", {"default": ""}),
+                "relative_subfolder": ("STRING", {
+                    "default": "",
+                    "tooltip": "Sous-dossier relatif (depuis Batch Video Queue). "
+                               "Préserve la structure dans output/done/failed."
+                }),
             }
         }
 
     def generate(self, auth, image, video_path, video_filename, output_folder,
                  version, motion_direction, mode, keep_original_sound,
-                 prompt="", source_video_path="", done_folder=""):
+                 prompt="", source_video_path="", done_folder="", relative_subfolder=""):
+
+        # --- QUALITY GATE: skip if image is empty (all zeros = QualityGate FAIL) ---
+        if image.max().item() == 0:
+            print("[NanaBanana] ⚠️ Image vide reçue (Quality Gate FAIL). Skip Kling MC.")
+            _move_to_failed(source_video_path, output_folder, done_folder, relative_subfolder)
+            return ("", video_filename)
 
         # --- SWAP FAILURE DETECTION ---
         failed_swap = False
@@ -81,7 +97,7 @@ class NB_PiAPIKlingMotionControl:
             print(f"[NanaBanana] ⚠️ Erreur lors de la vérification des dimensions : {e}")
 
         if failed_swap:
-            _move_to_failed(source_video_path, output_folder, done_folder)
+            _move_to_failed(source_video_path, output_folder, done_folder, relative_subfolder)
             return ("", video_filename)
 
         try:
@@ -162,9 +178,10 @@ class NB_PiAPIKlingMotionControl:
             # 4. Polling
             result_url = self._poll_task(auth, task_id)
 
-            # 5. Télécharger
-            output_path = os.path.join(output_folder, f"{video_filename}_mc.mp4")
-            os.makedirs(output_folder, exist_ok=True)
+            # 5. Télécharger (preserve subfolder structure)
+            effective_output = os.path.join(output_folder, relative_subfolder) if relative_subfolder else output_folder
+            output_path = os.path.join(effective_output, f"{video_filename}_mc.mp4")
+            os.makedirs(effective_output, exist_ok=True)
             self._download_video(result_url, output_path)
 
         except Exception as e:
@@ -174,18 +191,19 @@ class NB_PiAPIKlingMotionControl:
             if "TEMP_compressed_" in video_path and os.path.exists(video_path):
                 os.remove(video_path)
                 
-            _move_to_failed(source_video_path, output_folder, done_folder)
+            _move_to_failed(source_video_path, output_folder, done_folder, relative_subfolder)
             return ("", video_filename)
 
-        # 6. Nettoyage et Déplacement de la source (Success)
+        # 6. Nettoyage et Déplacement de la source (Success — preserve subfolder)
         if "TEMP_compressed_" in video_path and os.path.exists(video_path):
             os.remove(video_path)
-            
+
         if source_video_path and done_folder and os.path.exists(source_video_path):
-            os.makedirs(done_folder, exist_ok=True)
-            dest = os.path.join(done_folder, os.path.basename(source_video_path))
+            effective_done = os.path.join(done_folder, relative_subfolder) if relative_subfolder else done_folder
+            os.makedirs(effective_done, exist_ok=True)
+            dest = os.path.join(effective_done, os.path.basename(source_video_path))
             shutil.move(source_video_path, dest)
-            print(f"[NanaBanana] 📦 Moved source video to {done_folder}")
+            print(f"[NanaBanana] 📦 Moved source video to {effective_done}")
 
         return (output_path, video_filename)
 

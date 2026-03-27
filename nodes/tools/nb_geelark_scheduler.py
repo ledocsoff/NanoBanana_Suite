@@ -417,7 +417,11 @@ class NB_GeeLarkScheduler:
         events = []  # For HTML calendar
         global_scheduled_dts = []
 
-        for acc, rows in account_rows.items():
+        # Shuffler l'ordre des comptes pour casser le pattern séquentiel (anti-fingerprint)
+        shuffled_accounts = list(account_rows.items())
+        random.shuffle(shuffled_accounts)
+
+        for acc, rows in shuffled_accounts:
             random.shuffle(rows)
             row_idx = 0
             day_offset = acc_day_starts.get(acc, 0)

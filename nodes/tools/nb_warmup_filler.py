@@ -31,12 +31,24 @@ MIN_SEQUENTIAL_DELAY = _xlsx_utils.MIN_SEQUENTIAL_DELAY
 block_duration_minutes = _xlsx_utils.block_duration_minutes
 load_template = _xlsx_utils.load_template
 save_template = _xlsx_utils.save_template
+get_account_names = _xlsx_utils.get_account_names
+
+# Import calendar_html for visual planning output
+_calendar_html_path = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "shared", "calendar_html.py"
+)
+_spec2 = importlib.util.spec_from_file_location("calendar_html", _calendar_html_path)
+_calendar_html = importlib.util.module_from_spec(_spec2)
+_spec2.loader.exec_module(_calendar_html)
+build_calendar_html = _calendar_html.build_calendar_html
+build_color_map = _calendar_html.build_color_map
 
 
 class NB_AccountWarmupFiller:
     CATEGORY = "NanaBanana/Tools"
-    RETURN_TYPES = ("STRING",)
-    RETURN_NAMES = ("output_file",)
+    RETURN_TYPES = ("STRING", "STRING",)
+    RETURN_NAMES = ("output_file", "calendar_html",)
     FUNCTION = "fill_warmup"
     OUTPUT_NODE = True
 
@@ -153,7 +165,7 @@ class NB_AccountWarmupFiller:
         if not rows:
             print("[NB_AccountWarmupFiller] ⚠ Fichier vide.")
             out_path = save_template(wb, output_file)
-            return (out_path,)
+            return (out_path, "")
 
         if min_scroll_videos > max_scroll_videos:
             min_scroll_videos, max_scroll_videos = max_scroll_videos, min_scroll_videos
@@ -191,6 +203,14 @@ class NB_AccountWarmupFiller:
         print(f"🍌 [NB_AccountWarmupFiller] ⏳ {nb_accounts} comptes | Blocs: {', '.join(block_labels)} ({total_block_dur} min)")
         print(f"🍌 [NB_AccountWarmupFiller] 📐 Délai calculé: ~{ideal_delay:.0f} min/compte (±{variation} min)")
 
+        # Collect events for calendar + build color map
+        accounts = get_account_names(rows)
+        color_map = build_color_map(accounts)
+        events = []
+
+        # Shuffler l'ordre des comptes pour casser le pattern séquentiel (anti-fingerprint)
+        random.shuffle(rows)
+
         for i, row in enumerate(rows):
             # If current time is outside all active ranges, jump to next range start
             if not self._is_time_in_ranges(current_dt, merged_ranges):
@@ -203,7 +223,18 @@ class NB_AccountWarmupFiller:
             row[schema["number_of_videos"] - 1].value = random.randint(min_scroll_videos, max_scroll_videos)
 
             # 3. Write random Search Keyword
-            row[schema["search_keyword"] - 1].value = random.choice(keywords_list)
+            keyword = random.choice(keywords_list)
+            row[schema["search_keyword"] - 1].value = keyword
+
+            # Collect event for HTML calendar
+            acc_name = str(row[1].value) if row[1].value else f"account_{i}"
+            events.append({
+                "date": current_dt.date(),
+                "time": current_dt.time(),
+                "account": acc_name,
+                "caption": f"scroll {row[schema['number_of_videos'] - 1].value} vidéos | {keyword}",
+                "color": color_map.get(acc_name, "#888"),
+            })
 
             # Advance time for the NEXT account
             if i < len(rows) - 1:
@@ -213,13 +244,20 @@ class NB_AccountWarmupFiller:
 
         output_path = save_template(wb, output_file)
 
+        # Generate HTML calendar
+        html_path = output_file.replace(".xlsx", "_calendar.html")
+        html_content = build_calendar_html(events, base_date, 1)
+        with open(html_path, "w", encoding="utf-8") as f:
+            f.write(html_content)
+
         # Show the actual local times for user reference
         first_local = rows[0][schema["release_time"] - 1].value
         last_local = rows[-1][schema["release_time"] - 1].value
         print(f"🍌 [NB_AccountWarmupFiller] ✅ Fichier prêt: {output_path}")
+        print(f"🍌 [NB_AccountWarmupFiller] 📅 Calendrier: {html_path}")
         print(f"🍌 [NB_AccountWarmupFiller] 🕐 {first_local} → {last_local} (heure GeeLark/Paris)")
 
-        return (output_path,)
+        return (output_path, html_path)
 
     @classmethod
     def IS_CHANGED(cls, **kwargs):

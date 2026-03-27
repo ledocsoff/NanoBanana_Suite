@@ -64,6 +64,8 @@ Des outils ciblés pour préserver l'identité et exporter proprement le résult
 
 * `🍌 Swap` : Remplace ou combine des visages/identités sur une image cible tout en respectant l'éclairage et la direction du regard (nécessite les modèles Reactor/FaceID sous-jacents).
 
+* `🍌 Quality Gate` : **Validation intelligente des face swaps via Gemini Vision.** Le nœud analyse le résultat du swap selon 3 critères (identité, préservation de la scène, artefacts) et retourne un verdict binaire PASS/FAIL. En cas d'échec, il **re-génère automatiquement un nouveau swap** (retry interne) jusqu'à `max_retries` tentatives (défaut: 2). Si tous les retries échouent, il retourne un tensor vide que Kling MC détecte automatiquement pour skipper l'appel API et déplacer la vidéo dans le dossier `/failed`.
+
 * `🍌 Preview` : Permet de prévisualiser l'image en direct dans le flow, avant la sauvegarde, sans l'écrire définitivement.
 
 * `🍌 Clean Save` : **(Important)** Sauvegarde l'image finale sur votre disque dur (dans le dossier natif de sortie de ComfyUI), en *supprimant intégralement toutes les balises EXIF et métadonnées invisibles* injectées par ComfyUI. Idéal pour partager des images pures sans révéler le workflow.
@@ -77,7 +79,7 @@ Ces nœuds font le pont direct entre ComfyUI et les API de génération vidéo e
 * `🍌 PiAPI Kling Auth` : Nœud d'authentification pour se connecter à PiAPI de manière sécurisée.
 * `🍌 PiAPI Kling Motion Control` : Permet d'envoyer vos images générées dans ComfyUI à l'IA vidéo Kling pour leur donner vie, avec un contrôle avancé du mouvement (Motion Brush, Camera Path, etc).
 
-* `🍌 Batch Video Queue` : Gère une file d'attente pour traiter, charger ou lister plusieurs vidéos en lot dans le workflow.
+* `🍌 Batch Video Queue` : Gère une file d'attente pour traiter, charger ou lister plusieurs vidéos en lot dans le workflow. Supporte le **mode récursif** : si activé, il scanne les sous-dossiers et préserve la structure dans `output/`, `done/` et `failed/`. La détection de vidéos déjà traitées utilise le chemin relatif complet (pas seulement le nom de fichier), ce qui évite les collisions entre sous-dossiers.
 * `🍌 Video First Frame` : Extrait instantanément la première frame (image 1) d'une vidéo pour s'en servir de référence Image-to-Video.
 * `🍌 Export for Kling` : Formatte la taille et prépare les métadonnées optimales de l'image pour l'API Kling.
 
@@ -342,7 +344,29 @@ Si l'espacement calculé est inférieur à 15 minutes (trop de comptes pour le b
   📄 _scheduled.xlsx + 📊 _calendar.html
 ```
 
-#### Workflow 4 : Vidéo unique → Copies spoofées
+#### Workflow 4 : Pipeline complet Face Swap → Kling MC
+```
+  ┌──────────────────┐     ┌──────────────┐     ┌──────────────┐
+  │ Batch Video Queue │ ──→ │ Video 1st    │ ──→ │ 🍌 Swap      │
+  │  (recursive: on)  │     │ Frame        │     └──────┬───────┘
+  └──────┬───────────┘     └──────────────┘            │
+         │                                              │
+         │ relative_subfolder                ┌──────────▼───────────┐
+         │                                   │ 🍌 Quality Gate       │
+         │                                   │ (PASS/FAIL + retry)   │
+         │                                   └──────────┬───────────┘
+         │                                              │ image (ou vide)
+         └──────────────────────────────────────────────▼
+                                              ┌──────────────────────┐
+                                              │ 🍌 PiAPI Kling MC     │
+                                              │ ← relative_subfolder  │
+                                              └──────────┬───────────┘
+                                                         │
+                                              output/Peak Reels/video_mc.mp4
+                                              done/Peak Reels/video.mp4
+```
+
+#### Workflow 5 : Vidéo unique → Copies spoofées
 ```
   ┌──────────────┐     ┌───────────────┐
   │ Export Kling  │ ──→ │ PiAPI Kling MC │ ──→ vidéo .mp4
@@ -363,25 +387,25 @@ Si l'espacement calculé est inférieur à 15 minutes (trop de comptes pour le b
 
 ```
 NanoBanana_Suite/
-├── __init__.py              # Point d'entrée ComfyUI (23 nœuds enregistrés)
+├── __init__.py              # Point d'entrée ComfyUI (24 nœuds enregistrés)
 ├── core/                    # Utilitaires bas niveau
 │   ├── image_utils.py       # tensor↔PIL, base64
-│   ├── video_utils.py       # FFmpeg, extraction frames
+│   ├── video_utils.py       # FFmpeg, extraction frames, scan récursif
 │   └── file_manager.py      # Gestion fichiers/dossiers
 ├── shared/                  # Modules partagés (scheduling)
-│   ├── gemini_client.py     # Client Google Gemini
+│   ├── gemini_client.py     # Client Google Gemini (retry, safety handling)
 │   ├── gemini_config.py     # Nœud config API
 │   ├── xlsx_utils.py        # Source de vérité : TIME_BLOCKS, schemas, helpers Excel
 │   └── calendar_html.py     # Générateur de calendrier HTML (couleurs HSL dynamiques)
 ├── nodes/
-│   ├── api/                 # PiAPI Kling Auth + Motion Control
+│   ├── api/                 # PiAPI Kling Auth + Motion Control (subfolder-aware)
 │   ├── direction/           # IA Director, Matrix, Variant, Chooser, Vision
-│   ├── face/                # Swap
+│   ├── face/                # Swap, Quality Gate (validation + retry)
 │   ├── generation/          # Prompt-to-Image, Image-to-Image
 │   ├── postprocess/         # Preview, Clean Save
 │   ├── tools/               # Video Spoofer, GeeLark Scheduler, Captioner, Bio Gen, Profile Filler, Warmup
 │   │   └── data/            # emoji_fragments.json
-│   └── video/               # Batch Queue, First Frame, Export for Kling
+│   └── video/               # Batch Queue (recursive), First Frame, Export for Kling
 ├── web/                     # Scripts JS pour l'UI ComfyUI
 └── tests/                   # Tests automatisés
 ```
