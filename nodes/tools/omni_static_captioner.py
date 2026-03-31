@@ -1,5 +1,5 @@
 """
-NB_StaticCaptioner — Deterministic caption randomizer for Reels & Carousel
+Omni_StaticCaptioner — Deterministic caption randomizer for Reels & Carousel
 ==========================================================================
 Generates lowercase, generic captions with 0 APIs.
 Supports two content types with distinct internal pools:
@@ -38,8 +38,8 @@ _CAROUSEL_CAPTIONS = [
 ]
 
 
-class NB_StaticCaptioner:
-    CATEGORY = "NanaBanana/Tools"
+class Omni_StaticCaptioner:
+    CATEGORY = "Omni/Tools"
     RETURN_TYPES = ("STRING",)
     RETURN_NAMES = ("captions",)
     FUNCTION = "generate"
@@ -81,7 +81,7 @@ class NB_StaticCaptioner:
         if not raw_lines:
             raw_lines = ["mood"]
 
-        print(f"[NB_StaticCaptioner] Generating {count} captions (source={content_type}, pool={len(raw_lines)})...")
+        print(f"[Omni_StaticCaptioner] Generating {count} captions (source={content_type}, pool={len(raw_lines)})...")
 
         # Parse hashtags
         raw_tags = [tag.strip().strip('#') for tag in hashtag_pool.split(',') if tag.strip()]
@@ -102,7 +102,7 @@ class NB_StaticCaptioner:
             results.append(cap)
 
         final_string = "\n---\n".join(results)
-        print(f"[NB_StaticCaptioner] ✓ Generated {count} {content_type} captions")
+        print(f"[Omni_StaticCaptioner] ✓ Generated {count} {content_type} captions")
         return (final_string,)
 
     @classmethod

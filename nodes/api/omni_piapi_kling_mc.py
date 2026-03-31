@@ -9,6 +9,8 @@ def _move_to_failed(source_path, output_folder, done_folder, relative_subfolder=
     """Move a source video to a /failed subfolder, preserving relative structure."""
     if not source_path or not os.path.exists(source_path):
         return
+        
+    done_folder = os.path.normpath(done_folder) if done_folder else ""
     if done_folder:
         # Replace only the last component: /path/to/done → /path/to/failed
         parent = os.path.dirname(done_folder)
@@ -21,11 +23,11 @@ def _move_to_failed(source_path, output_folder, done_folder, relative_subfolder=
     os.makedirs(failed_folder, exist_ok=True)
     dest = os.path.join(failed_folder, os.path.basename(source_path))
     shutil.move(source_path, dest)
-    print(f"[NanaBanana] 📦 Vidéo source déplacée vers : {failed_folder}")
+    print(f"[Omni] 📦 Vidéo source déplacée vers : {failed_folder}")
 
 
-class NB_PiAPIKlingMotionControl:
-    CATEGORY = "NanaBanana/API"
+class Omni_PiAPIKlingMotionControl:
+    CATEGORY = "Omni/API"
     RETURN_TYPES = ("STRING", "STRING")
     RETURN_NAMES = ("video_url", "video_filename")
     FUNCTION = "generate"
@@ -47,9 +49,9 @@ class NB_PiAPIKlingMotionControl:
                     "default": "video",
                     "tooltip": "video = suit la vidéo ref (max 30s). image = suit l'image (max 10s)."
                 }),
-                "mode": (["std", "pro"], {
-                    "default": "std",
-                    "tooltip": "std = 720p. pro = 1080p."
+                "mode": (["720p", "1080p"], {
+                    "default": "720p",
+                    "tooltip": "720p (Standard Kling). 1080p (Pro Kling)."
                 }),
                 "keep_original_sound": ("BOOLEAN", {"default": True}),
             },
@@ -66,16 +68,22 @@ class NB_PiAPIKlingMotionControl:
                     "tooltip": "Sous-dossier relatif (depuis Batch Video Queue). "
                                "Préserve la structure dans output/done/failed."
                 }),
+                "skip_trigger": ("STRING", {"forceInput": True, "tooltip": "Connect status_message from upstream nodes. If it starts with FAIL, the node skips execution."}),
             }
         }
 
     def generate(self, auth, image, video_path, video_filename, output_folder,
                  version, motion_direction, mode, keep_original_sound,
-                 prompt="", source_video_path="", done_folder="", relative_subfolder=""):
+                 prompt="", source_video_path="", done_folder="", relative_subfolder="", skip_trigger=""):
+
+        if skip_trigger and skip_trigger.strip().upper().startswith("FAIL"):
+            print(f"[Omni_KlingMC] 🛑 Execution skipped due to upstream FAIL trigger: {skip_trigger.strip()}")
+            _move_to_failed(source_video_path, output_folder, done_folder, relative_subfolder)
+            return ("", video_filename)
 
         # --- QUALITY GATE: skip if image is empty (all zeros = QualityGate FAIL) ---
         if image.max().item() == 0:
-            print("[NanaBanana] ⚠️ Image vide reçue (Quality Gate FAIL). Skip Kling MC.")
+            print("[Omni] ⚠️ Image vide reçue (Quality Gate FAIL). Skip Kling MC.")
             _move_to_failed(source_video_path, output_folder, done_folder, relative_subfolder)
             return ("", video_filename)
 
@@ -92,9 +100,9 @@ class NB_PiAPIKlingMotionControl:
                 
                 if vid_w > 0 and vid_h > 0 and img_w == vid_w and img_h == vid_h:
                     failed_swap = True
-                    print(f"[NanaBanana] ⚠️ Échec du FaceSwap détecté (dimensions identiques {img_w}x{img_h}). Skip API Kling pour économiser les crédits.")
+                    print(f"[Omni] ⚠️ Échec du FaceSwap détecté (dimensions identiques {img_w}x{img_h}). Skip API Kling pour économiser les crédits.")
         except Exception as e:
-            print(f"[NanaBanana] ⚠️ Erreur lors de la vérification des dimensions : {e}")
+            print(f"[Omni] ⚠️ Erreur lors de la vérification des dimensions : {e}")
 
         if failed_swap:
             _move_to_failed(source_video_path, output_folder, done_folder, relative_subfolder)
@@ -102,19 +110,19 @@ class NB_PiAPIKlingMotionControl:
 
         try:
             # 1. Upload de l'image
-            print(f"[NanaBanana] 📤 Uploading image to PiAPI ephemeral storage...")
+            print(f"[Omni] 📤 Uploading image to PiAPI ephemeral storage...")
             image_b64 = self._tensor_to_base64(image)
             image_url = self._upload_file(auth, f"{video_filename}_char.png", image_b64)
 
             # 2. Upload de la vidéo motion reference
-            print(f"[NanaBanana] 📤 Procédure d'upload vidéo sur PiAPI ephemeral storage...")
+            print(f"[Omni] 📤 Procédure d'upload vidéo sur PiAPI ephemeral storage...")
             if not os.path.exists(video_path) and source_video_path:
                 video_path = source_video_path
                 
             if os.path.exists(video_path):
                 file_size_mb = os.path.getsize(video_path) / (1024 * 1024)
                 if file_size_mb > 9.9:
-                    print(f"[NanaBanana] ⚠️ Vidéo de {file_size_mb:.1f}MB (>10MB). Compression FFmpeg automatique à la volée...")
+                    print(f"[Omni] ⚠️ Vidéo de {file_size_mb:.1f}MB (>10MB). Compression FFmpeg automatique à la volée...")
                     import subprocess
                     compressed_path = os.path.join(output_folder, f"TEMP_compressed_{video_filename}.mp4")
                     cmd = [
@@ -125,7 +133,7 @@ class NB_PiAPIKlingMotionControl:
                     subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                     if os.path.exists(compressed_path):
                         video_path = compressed_path
-                        print(f"[NanaBanana] ✅ Compression terminée. Nouvelle taille : {os.path.getsize(compressed_path) / (1024 * 1024):.1f}MB")
+                        print(f"[Omni] ✅ Compression terminée. Nouvelle taille : {os.path.getsize(compressed_path) / (1024 * 1024):.1f}MB")
                     else:
                         raise Exception("Erreur fatale lors de la compression FFmpeg. Assurez-vous d'avoir FFmpeg installé.")
                 
@@ -136,7 +144,8 @@ class NB_PiAPIKlingMotionControl:
             video_url = self._upload_file(auth, f"{video_filename}_motion.{video_ext}", video_b64)
 
             # 3. Créer la tâche Motion Control
-            print(f"[NanaBanana] 🚀 Submitting task to PiAPI Kling ({version} {mode})...")
+            kling_mode = "std" if mode == "720p" else "pro"
+            print(f"[Omni] 🚀 Submitting task to PiAPI Kling ({version} {kling_mode})...")
             payload = {
                 "model": "kling",
                 "task_type": "motion_control",
@@ -146,7 +155,7 @@ class NB_PiAPIKlingMotionControl:
                     "preset_motion": "",
                     "motion_direction": motion_direction,
                     "keep_original_sound": keep_original_sound,
-                    "mode": mode,
+                    "mode": kling_mode,
                     "version": version
                 },
                 "config": {
@@ -185,8 +194,8 @@ class NB_PiAPIKlingMotionControl:
             self._download_video(result_url, output_path)
 
         except Exception as e:
-            print(f"[NanaBanana] 🚨 ERREUR CRITIQUE PiAPI interceptée : {e}")
-            print("[NanaBanana] 🛡️ Le filet de sécurité s'active. La vidéo est isolée, la queue continue.")
+            print(f"[Omni] 🚨 ERREUR CRITIQUE PiAPI interceptée : {e}")
+            print("[Omni] 🛡️ Le filet de sécurité s'active. La vidéo est isolée, la queue continue.")
             
             if "TEMP_compressed_" in video_path and os.path.exists(video_path):
                 os.remove(video_path)
@@ -203,7 +212,7 @@ class NB_PiAPIKlingMotionControl:
             os.makedirs(effective_done, exist_ok=True)
             dest = os.path.join(effective_done, os.path.basename(source_video_path))
             shutil.move(source_video_path, dest)
-            print(f"[NanaBanana] 📦 Moved source video to {effective_done}")
+            print(f"[Omni] 📦 Moved source video to {effective_done}")
 
         return (output_path, video_filename)
 
@@ -235,7 +244,7 @@ class NB_PiAPIKlingMotionControl:
             data = response.json()["data"]
             status = data.get("status", "")
             
-            print(f"[NanaBanana] ⏳ PiAPI Task {task_id} | Status: {status} | {elapsed}s")
+            print(f"[Omni] ⏳ PiAPI Task {task_id} | Status: {status} | {elapsed}s")
 
             if status == "completed":
                 output = data.get("output", {})
@@ -290,10 +299,10 @@ class NB_PiAPIKlingMotionControl:
             return base64.b64encode(f.read()).decode("utf-8")
 
     def _download_video(self, url, output_path):
-        print(f"[NanaBanana] ⬇️ Downloading final video to {output_path}...")
+        print(f"[Omni] ⬇️ Downloading final video to {output_path}...")
         response = requests.get(url, stream=True, timeout=120)
         response.raise_for_status()
         with open(output_path, "wb") as f:
             for chunk in response.iter_content(chunk_size=8192):
                 f.write(chunk)
-        print(f"[NanaBanana] ✅ Video downloaded successfully!")
+        print(f"[Omni] ✅ Video downloaded successfully!")

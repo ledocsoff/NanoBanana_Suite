@@ -1,5 +1,5 @@
 """
-NB_EmojiBioGen — Aesthetic Unicode bio generator for Instagram profiles
+Omni_EmojiBioGen — Aesthetic Unicode bio generator for Instagram profiles
 ========================================================================
 Generates random bios using aesthetic Unicode symbols (Egyptian hieroglyphs,
 Tibetan marks, kaomoji, combining characters) organized by "vibe".
@@ -28,8 +28,8 @@ def _load_fragments() -> dict:
     return _fragments_cache
 
 
-class NB_EmojiBioGen:
-    CATEGORY = "NanaBanana/Tools"
+class Omni_EmojiBioGen:
+    CATEGORY = "Omni/Tools"
     RETURN_TYPES = ("STRING",)
     RETURN_NAMES = ("bios",)
     FUNCTION = "generate"
@@ -79,7 +79,7 @@ class NB_EmojiBioGen:
                  fixed_line: str = "", fixed_position: str = "end") -> tuple[str]:
 
         if not enabled:
-            print("[NB_EmojiBioGen] ⏸ Désactivé — sortie vide, bios non modifiées.")
+            print("[Omni_EmojiBioGen] ⏸ Désactivé — sortie vide, bios non modifiées.")
             return ("",)
 
         count = 200  # Auto: assez pour couvrir n'importe quel template
@@ -106,7 +106,7 @@ class NB_EmojiBioGen:
             attempts += 1
 
         final = "\n---\n".join(results)
-        print(f"[NB_EmojiBioGen] ✓ Generated {len(results)} unique bios (vibe={vibe}, style={style})")
+        print(f"[Omni_EmojiBioGen] ✓ Generated {len(results)} unique bios (vibe={vibe}, style={style})")
         return (final,)
 
     def _build_single_bio(self, fragments: dict, style: str, vibe: str, bio_length: str) -> str:

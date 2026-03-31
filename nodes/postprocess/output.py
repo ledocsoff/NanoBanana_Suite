@@ -1,11 +1,11 @@
 """
-NanoBanana PostProcess Nodes for ComfyUI
+Omni PostProcess Nodes for ComfyUI
 =========================================
 Save and preview images within ComfyUI workflows.
 
 Nodes:
-  - NanoBananaPreview   : Preview image inline (pass-through).
-  - NanoBananaCleanSave : Save image to absolute path without metadata.
+  - OmniPreview   : Preview image inline (pass-through).
+  - OmniCleanSave : Save image to absolute path without metadata.
 """
 
 from __future__ import annotations
@@ -37,7 +37,7 @@ except ImportError:
 # Node – Preview Image (Pass-Through)
 # ──────────────────────────────────────────────────────────────────────────────
 
-class NanoBananaPreview:
+class OmniPreview:
     """
     Displays an image preview in the node and passes the image through as output.
     Allows chaining to other nodes like CleanSave.
@@ -62,10 +62,10 @@ class NanoBananaPreview:
     RETURN_NAMES = ("images",)
     FUNCTION = "preview_images"
     OUTPUT_NODE = True
-    CATEGORY = "NanoBanana"
+    CATEGORY = "Omni"
 
     def preview_images(self, images):
-        filename_prefix = "NanoBanana_Preview" + self.prefix_append
+        filename_prefix = "Omni_Preview" + self.prefix_append
         full_output_folder, filename, counter, subfolder, filename_prefix = folder_paths.get_save_image_path(filename_prefix, self.output_dir, images[0].shape[1], images[0].shape[0])
         results = list()
         
@@ -82,7 +82,7 @@ class NanoBananaPreview:
             })
             counter += 1
 
-        print(f"[NanoBananaPreview] Saved {len(images)} preview image(s) to {full_output_folder}")
+        print(f"[OmniPreview] Saved {len(images)} preview image(s) to {full_output_folder}")
         return { "ui": { "images": results }, "result": (images,) }
 
 
@@ -90,7 +90,7 @@ class NanoBananaPreview:
 # Node – Clean Save (No Metadata)
 # ──────────────────────────────────────────────────────────────────────────────
 
-class NanoBananaCleanSave:
+class OmniCleanSave:
     """
     Saves an image to an absolute path on the disk without adding ANY ComfyUI 
     or EXIF metadata.
@@ -100,12 +100,12 @@ class NanoBananaCleanSave:
     @classmethod
     def INPUT_TYPES(s):
         import folder_paths as fp
-        default_out = os.path.join(fp.get_output_directory(), "NanoBanana")
+        default_out = os.path.join(fp.get_output_directory(), "Omni")
         return {
             "required": {
                 "images": ("IMAGE", ),
                 "save_path": ("STRING", {"default": default_out, "multiline": False}),
-                "filename_prefix": ("STRING", {"default": "NanoBanana_Clean"})
+                "filename_prefix": ("STRING", {"default": "Omni_Clean"})
             },
         }
 
@@ -113,12 +113,12 @@ class NanoBananaCleanSave:
     RETURN_NAMES = ("images",)
     FUNCTION = "save_images"
     OUTPUT_NODE = True
-    CATEGORY = "NanoBanana"
+    CATEGORY = "Omni"
 
-    def save_images(self, images, save_path="", filename_prefix="NanoBanana_Clean"):
+    def save_images(self, images, save_path="", filename_prefix="Omni_Clean"):
         if not save_path:
             import folder_paths as fp
-            save_path = os.path.join(fp.get_output_directory(), "NanoBanana")
+            save_path = os.path.join(fp.get_output_directory(), "Omni")
             
         os.makedirs(save_path, exist_ok=True)
         
@@ -144,5 +144,5 @@ class NanoBananaCleanSave:
                 "type": "output"
             })
 
-        print(f"[NanoBananaCleanSave] Saved {len(images)} clean image(s) to '{save_path}'")
+        print(f"[OmniCleanSave] Saved {len(images)} clean image(s) to '{save_path}'")
         return { "ui": { "images": results }, "result": (images,) }

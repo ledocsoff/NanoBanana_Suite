@@ -2,9 +2,9 @@ import os
 import glob
 from ...core import video_utils, file_manager
 
-class NB_BatchVideoQueue:
+class Omni_BatchVideoQueue:
     OUTPUT_NODE = True
-    CATEGORY = "NanaBanana/Batch"
+    CATEGORY = "Omni/Batch"
     FUNCTION = "get_next"
     RETURN_TYPES = ("STRING", "STRING", "STRING", "STRING", "STRING", "FLOAT", "INT", "INT", "INT")
     RETURN_NAMES = ("current_video_path", "output_folder", "done_folder",
@@ -81,7 +81,7 @@ class NB_BatchVideoQueue:
             pending_files.sort()
 
         if not pending_files:
-            print("[NanaBanana] 🏁 Batch complete. No pending videos in the source folder.")
+            print("[Omni] 🏁 Batch complete. No pending videos in the source folder.")
             return empty_return
 
         current_video = pending_files[0]
@@ -93,7 +93,7 @@ class NB_BatchVideoQueue:
         try:
             metadata = video_utils.extract_metadata(current_video)
         except Exception as e:
-            print(f"[NanaBanana] ⚠️ Failed to extract metadata for {current_video}: {e}")
+            print(f"[Omni] ⚠️ Failed to extract metadata for {current_video}: {e}")
             return empty_return
 
         current_index = 1
@@ -103,7 +103,7 @@ class NB_BatchVideoQueue:
         fps = metadata["fps"]
 
         subfolder_info = f" [{relative_subfolder}]" if relative_subfolder else ""
-        print(f"[NanaBanana] 📂 {current_index}/{total_count} | {filename}{subfolder_info} | {duration:.1f}s")
+        print(f"[Omni] 📂 {current_index}/{total_count} | {filename}{subfolder_info} | {duration:.1f}s")
 
         return (current_video, output_folder, done_folder, filename,
                 relative_subfolder, duration, fps, current_index, total_count)

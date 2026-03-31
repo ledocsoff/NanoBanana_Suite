@@ -26,6 +26,7 @@ try:
         extract_image_from_response,
         tensor_to_pil,
         pil_to_tensor,
+        TEXT_MODELS,
     )
 except ImportError:
     raise ImportError(
@@ -40,7 +41,7 @@ AVAILABLE_MODELS = IMAGE_CAPABLE_MODELS
 # Node – Variant Director (NLP extraction for variant generation)
 # ──────────────────────────────────────────────────────────────────────────────
 
-class NanoBananaVariantDirector:
+class OmniVariantDirector:
     """Constructs instructions for generating a variant of an existing image while preserving outfit and background."""
     DESCRIPTION = "Constructs instructions for generating a variant of an existing image while preserving outfit and background."
 
@@ -49,6 +50,7 @@ class NanoBananaVariantDirector:
         return {
             "required": {
                 "gemini_config": ("GEMINI_CONFIG",),
+                "model": (TEXT_MODELS, {"default": "gemini-2.5-flash"}),
                 "natural_prompt": ("STRING", {"multiline": True, "default": "une photo d'elle en train de sauter avec un grand sourire"}),
                 "photo_type": (["selfie", "third_person", "mirror"], {"default": "third_person"}),
                 "modesty_level": (["low", "medium", "high"], {"default": "medium"}),
@@ -60,7 +62,7 @@ class NanoBananaVariantDirector:
     RETURN_TYPES = ("STRING", "STRING")
     RETURN_NAMES = ("system_instruction", "json_matrix")
     FUNCTION = "run"
-    CATEGORY = "NanoBanana/Variant Workflow"
+    CATEGORY = "Omni/Variant Workflow"
 
     def generate_imperfections(self, seed: int) -> list[str]:
         full_imperfections = [
@@ -94,9 +96,9 @@ class NanoBananaVariantDirector:
             
         return res[:3]
 
-    def run(self, gemini_config: dict, natural_prompt: str, photo_type: str, modesty_level: str, seed: int, max_retries: int) -> tuple[str, str]:
+    def run(self, gemini_config: dict, natural_prompt: str, photo_type: str, modesty_level: str, seed: int, max_retries: int, model: str = "gemini-2.5-flash") -> tuple[str, str]:
         
-        print(f"[NanoBananaVariantDirector] Running NLP on text: '{natural_prompt[:50]}...'")
+        print(f"[OmniVariantDirector] Running NLP on text with {model}: '{natural_prompt[:50]}...'")
         
         system_nlp = '''You extract Action and Expression from a user's creative direction text.
 
@@ -135,16 +137,16 @@ Output: {"action": "standing with arms crossed", "expression": "serious"}'''
         expression_prompt = "neutral"
         
         # VariantDirector uses gemini-2.5-flash (text model for NLP)
-        client, _ = create_gemini_client(gemini_config)
+        client = create_gemini_client(gemini_config)
 
         config: dict[str, Any] = {
             "response_mime_type": "application/json",
             "temperature": 0.2
         }
         
-        response, status = call_with_retry(client, "gemini-2.5-flash", contents, config, max_retries)
+        response, status = call_with_retry(client, model, contents, config, max_retries)
         if response is None:
-            print(f"[NanoBananaVariantDirector] ⚠ NLP Failed: {status}")
+            print(f"[OmniVariantDirector] ⚠ NLP Failed: {status}")
         else:
             try:
                 text_result = getattr(response, 'text', None)
@@ -154,17 +156,17 @@ Output: {"action": "standing with arms crossed", "expression": "serious"}'''
                 parsed = json.loads(text_result)
                 action_prompt = parsed.get("action", action_prompt)
                 expression_prompt = parsed.get("expression", expression_prompt)
-                print(f"[NanoBananaVariantDirector] ✓ NLP Parsed: Action='{action_prompt}', Expression='{expression_prompt}'")
+                print(f"[OmniVariantDirector] ✓ NLP Parsed: Action='{action_prompt}', Expression='{expression_prompt}'")
             except Exception as e:
-                print(f"[NanoBananaVariantDirector] ⚠ Failed to parse NLP JSON: {e}")
+                print(f"[OmniVariantDirector] ⚠ Failed to parse NLP JSON: {e}")
 
         # Fallback guard: never allow empty strings
         if not action_prompt.strip():
             action_prompt = "natural pose"
-            print(f"[NanoBananaVariantDirector] ⚠ NLP returned empty Action, using fallback: '{action_prompt}'")
+            print(f"[OmniVariantDirector] ⚠ NLP returned empty Action, using fallback: '{action_prompt}'")
         if not expression_prompt.strip():
             expression_prompt = "neutral"
-            print(f"[NanoBananaVariantDirector] ⚠ NLP returned empty Expression, using fallback: '{expression_prompt}'")
+            print(f"[OmniVariantDirector] ⚠ NLP returned empty Expression, using fallback: '{expression_prompt}'")
 
         base_neg = (
             "blurry, deformed anatomy, extra fingers, mutated hands, "
@@ -225,7 +227,7 @@ RULE #5 — NEGATIVE PROMPT: NEVER produce anything listed here: {base_neg}
 # ──────────────────────────────────────────────────────────────────────────────
 # Node – Variant API (Renderer)
 # ──────────────────────────────────────────────────────────────────────────────
-class NanoBananaVariantAPI:
+class OmniVariantAPI:
     """Runs the Variant Generation heavily referencing a base image to change only pose/expression."""
     DESCRIPTION = "Runs the Variant Generation heavily referencing a base image to change only pose/expression."
 
@@ -234,6 +236,7 @@ class NanoBananaVariantAPI:
         return {
             "required": {
                 "gemini_config": ("GEMINI_CONFIG",),
+                "model": (IMAGE_CAPABLE_MODELS, {"default": "gemini-3-pro-image-preview"}),
                 "image": ("IMAGE",),
                 "system_instruction": ("STRING", {"multiline": True, "forceInput": True}),
                 "json_matrix": ("STRING", {"multiline": True, "forceInput": True}),
@@ -249,7 +252,7 @@ class NanoBananaVariantAPI:
     RETURN_TYPES = ("IMAGE", "STRING")
     RETURN_NAMES = ("variant_image", "status_message")
     FUNCTION = "run"
-    CATEGORY = "NanoBanana/Variant Workflow"
+    CATEGORY = "Omni/Variant Workflow"
     OUTPUT_NODE = False
 
     def run(
@@ -264,11 +267,12 @@ class NanoBananaVariantAPI:
         max_retries: int = 5,
         batch_size: int = 1,
         delay_between_calls: float = 3.0,
+        model: str = "gemini-3-pro-image-preview",
     ) -> tuple[torch.Tensor, str]:
         
-        print(f"[NanoBananaVariantAPI] Generating {batch_size} variant image(s)...")
+        print(f"[OmniVariantAPI] Generating {batch_size} variant image(s) with {model}...")
 
-        client, model = create_gemini_client(gemini_config)
+        client = create_gemini_client(gemini_config)
 
         pil_img = tensor_to_pil(image)
         img_byte_arr = io.BytesIO()
@@ -303,12 +307,12 @@ class NanoBananaVariantAPI:
             else:
                 matrix_dict: dict[str, Any] = {"directives": {"global_seed": 1337}}
         except Exception as e:
-            print(f"[NanoBananaVariantAPI] ⚠ Could not parse JSON Matrix: {e}")
+            print(f"[OmniVariantAPI] ⚠ Could not parse JSON Matrix: {e}")
             matrix_dict: dict[str, Any] = {"directives": {"global_seed": 1337}}
 
         for i in range(batch_size):
             if i > 0 and delay_between_calls > 0:
-                print(f"[NanoBananaVariantAPI] Waiting {delay_between_calls}s before next call...")
+                print(f"[OmniVariantAPI] Waiting {delay_between_calls}s before next call...")
                 time.sleep(delay_between_calls)
             contents = list(base_contents)
             
@@ -324,12 +328,12 @@ class NanoBananaVariantAPI:
             p_text = f"PROMPT MATRIX (Process this JSON strictly to generate the final image):\n{json.dumps(matrix_dict, indent=2)}"
             contents.append(p_text)
 
-            print(f"[NanoBananaVariantAPI] Calling Gemini Vision... {i + 1}/{batch_size}")
+            print(f"[OmniVariantAPI] Calling Gemini Vision... {i + 1}/{batch_size}")
             response, status_msg = call_with_retry(client, model, contents, config, max_retries)
             
             # API Fallback logic
             if response is None and status_msg and "SAFETY" in status_msg.upper():
-                print(f"[NanoBananaVariantAPI] ⚠ Safety Block triggered! Initiating automatic fallback with high modesty...")
+                print(f"[OmniVariantAPI] ⚠ Safety Block triggered! Initiating automatic fallback with high modesty...")
                 if "directives" in matrix_dict and isinstance(matrix_dict["directives"], dict):
                     matrix_dict["directives"]["modestyLevel"] = "high"
                 
@@ -341,15 +345,15 @@ class NanoBananaVariantAPI:
             last_status_msg = status_msg
 
             if response is None:
-                print(f"[NanoBananaVariantAPI] ⚠ API Error on image {i + 1}: {status_msg}")
+                print(f"[OmniVariantAPI] ⚠ API Error on image {i + 1}: {status_msg}")
                 continue
 
             result_pil = extract_image_from_response(response)
             if result_pil is None:
-                print(f"[NanoBananaVariantAPI] ⚠ No image in response {i + 1}.")
+                print(f"[OmniVariantAPI] ⚠ No image in response {i + 1}.")
                 continue
 
-            print(f"[NanoBananaVariantAPI] ✓ Image {i + 1} Done — output size: {result_pil.size}")
+            print(f"[OmniVariantAPI] ✓ Image {i + 1} Done — output size: {result_pil.size}")
             results.append(pil_to_tensor(result_pil))
 
             del result_pil
@@ -361,7 +365,7 @@ class NanoBananaVariantAPI:
             out_tensor = torch.cat(results, dim=0)
             return (out_tensor, last_status_msg)
         else:
-            print("[NanoBananaVariantAPI] ⚠ No valid images generated. Returning fallback tensor.")
+            print("[OmniVariantAPI] ⚠ No valid images generated. Returning fallback tensor.")
             return (image, last_status_msg)
 
     @classmethod

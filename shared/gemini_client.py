@@ -1,11 +1,11 @@
 """
-NanoBanana Shared — Gemini Client & Utilities
+Omni Shared — Gemini Client & Utilities
 ==============================================
-Central module shared by all NanoBanana ComfyUI nodes.
+Central module shared by all Omni ComfyUI nodes.
 
 Provides:
   - IMAGE_CAPABLE_MODELS: Single source of truth for supported models
-  - create_gemini_client: Factory for AI Studio / Vertex AI clients (returns client + model)
+  - create_gemini_client: Factory for AI Studio / Vertex AI clients (returns client only)
   - call_with_retry: API call with exponential backoff
   - extract_image_from_response: Parse image from Gemini response
   - tensor_to_pil / pil_to_tensor: ComfyUI tensor ↔ PIL converters
@@ -34,9 +34,20 @@ IMAGE_CAPABLE_MODELS = [
     "gemini-3-pro-image-preview",
 ]
 
+VIDEO_CAPABLE_MODELS = [
+    "veo-3.1-generate-preview",
+    "veo-2.0-generate-001",
+]
+
+TEXT_MODELS = [
+    "gemini-2.5-flash",
+    "gemini-2.5-pro",
+    "gemini-1.5-pro",
+]
+
 PROVIDERS = [
-    "AI Studio (Free)",
-    "Vertex AI (GCP Credits)",
+    "AI Studio",
+    "Vertex AI",
 ]
 
 GCP_LOCATIONS = [
@@ -54,17 +65,16 @@ ASPECT_RATIOS = ["AUTO", "1:1", "16:9", "4:3", "3:4", "9:16"]
 # Client Factory
 # ──────────────────────────────────────────────────────────────────────────────
 
-def create_gemini_client(config: dict) -> tuple[genai.Client, str]:
+def create_gemini_client(config: dict) -> genai.Client:
     """
     Create a ``genai.Client`` from a GEMINI_CONFIG dict.
-    Returns ``(client, model_name)``.
+    Returns ``client``.
 
     For **AI Studio**: uses api_key (from config or ``GOOGLE_API_KEY`` env var).
     For **Vertex AI**: uses Application Default Credentials via
     ``gcloud auth application-default login``.
     """
     provider = config.get("provider", PROVIDERS[0])
-    model = config.get("model", IMAGE_CAPABLE_MODELS[0])
 
     if "Vertex" in provider:
         project = config.get("gcp_project_id", "").strip()
@@ -72,8 +82,8 @@ def create_gemini_client(config: dict) -> tuple[genai.Client, str]:
 
         if not project:
             raise ValueError(
-                "[NanoBanana] ❌ Vertex AI selected but 'gcp_project_id' is empty. "
-                "Please fill in your GCP project ID in the NanoBananaGeminiConfig node."
+                "[Omni] ❌ Vertex AI selected but 'gcp_project_id' is empty. "
+                "Please fill in your GCP project ID in the OmniGeminiConfig node."
             )
 
         # Suppress "No project ID could be determined" warning
@@ -85,13 +95,13 @@ def create_gemini_client(config: dict) -> tuple[genai.Client, str]:
                 project=project,
                 location=location,
             )
-            print(f"[NanoBanana] ✓ Vertex AI client created — project={project}, location={location}")
-            return client, model
+            print(f"[Omni] ✓ Vertex AI client created — project={project}, location={location}")
+            return client
         except Exception as e:
             error_str = str(e).lower()
             if "credentials" in error_str or "auth" in error_str or "adc" in error_str:
                 raise RuntimeError(
-                    "[NanoBanana] ❌ Vertex AI authentication failed.\n"
+                    "[Omni] ❌ Vertex AI authentication failed.\n"
                     "  → Please run: gcloud auth application-default login\n"
                     "  → Make sure the Google Cloud SDK (gcloud) is installed.\n"
                     f"  → Original error: {e}"
@@ -104,14 +114,14 @@ def create_gemini_client(config: dict) -> tuple[genai.Client, str]:
             api_key = os.environ.get("GOOGLE_API_KEY", "").strip()
         if not api_key:
             raise ValueError(
-                "[NanoBanana] ❌ AI Studio selected but no API key found.\n"
-                "  → Provide it in the NanoBananaGeminiConfig node, or\n"
+                "[Omni] ❌ AI Studio selected but no API key found.\n"
+                "  → Provide it in the OmniGeminiConfig node, or\n"
                 "  → Set the GOOGLE_API_KEY environment variable."
             )
 
         client = genai.Client(api_key=api_key)
-        print("[NanoBanana] ✓ AI Studio client created")
-        return client, model
+        print("[Omni] ✓ AI Studio client created")
+        return client
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -169,12 +179,12 @@ def extract_image_from_response(response) -> Optional[Image.Image]:
     Returns a PIL Image or None.
     """
     if not response or not hasattr(response, "candidates") or not response.candidates:
-        print(f"[NanoBanana] ⚠ Empty response or no candidates: {response}")
+        print(f"[Omni] ⚠ Empty response or no candidates: {response}")
         return None
 
     candidate = response.candidates[0]
     if not hasattr(candidate, "content") or not candidate.content or not hasattr(candidate.content, "parts") or not candidate.content.parts:
-        print(f"[NanoBanana] ⚠ Candidate has no content parts: {candidate}")
+        print(f"[Omni] ⚠ Candidate has no content parts: {candidate}")
         return None
 
     for part in candidate.content.parts:
@@ -191,9 +201,9 @@ def extract_image_from_response(response) -> Optional[Image.Image]:
                     return part.image.convert("RGB")
 
         except Exception as e:
-            print(f"[NanoBanana] ⚠ Error parsing part into PIL image: {e}")
+            print(f"[Omni] ⚠ Error parsing part into PIL image: {e}")
 
-    print("[NanoBanana] ⚠ Gemini API replied successfully, but with NO image.")
+    print("[Omni] ⚠ Gemini API replied successfully, but with NO image.")
     print("--- RAW API RESPONSE START ---")
     for part in candidate.content.parts:
         if hasattr(part, "text") and part.text:
@@ -223,7 +233,7 @@ def call_with_retry(
 
     for attempt in range(max_retries):
         try:
-            print(f"[NanoBanana] → {model}  attempt {attempt + 1}/{max_retries}")
+            print(f"[Omni] → {model}  attempt {attempt + 1}/{max_retries}")
             response = client.models.generate_content(
                 model=model,
                 contents=contents,
@@ -236,7 +246,7 @@ def call_with_retry(
                 if hasattr(cand, "finish_reason") and cand.finish_reason:
                     reason_str = str(cand.finish_reason).upper()
                     if "SAFETY" in reason_str or "BLOCK" in reason_str:
-                        print(f"[NanoBanana] ⚠ Content blocked by API internal filters (Finish Reason: {reason_str})")
+                        print(f"[Omni] ⚠ Content blocked by API internal filters (Finish Reason: {reason_str})")
                         return None, f"SAFETY_BLOCK: {reason_str}"
 
             return response, "Success"
@@ -247,21 +257,21 @@ def call_with_retry(
 
             # Safety / policy blocks — never retry
             if any(t in error_str.lower() for t in ["safety", "blocked", "policy", "harmful"]):
-                print(f"[NanoBanana] ⚠ Content blocked by safety filters: {e}")
+                print(f"[Omni] ⚠ Content blocked by safety filters: {e}")
                 return None, f"Content blocked by safety filters. Try modifying your prompt or images. ({error_str})"
 
             # Retryable transient errors
             if _is_retryable_error(e):
                 if attempt < max_retries - 1:
                     wait_time = min(2 ** attempt + random.uniform(0, 1), 30)
-                    print(f"[NanoBanana] ✗ {error_str[:80]} (attempt {attempt + 1}/{max_retries}) — retrying in {wait_time:.1f}s...")
+                    print(f"[Omni] ✗ {error_str[:80]} (attempt {attempt + 1}/{max_retries}) — retrying in {wait_time:.1f}s...")
                     time.sleep(wait_time)
                     continue
                 else:
                     return None, f"Transient error after {max_retries} retries. Last error: {error_str}"
 
             # Non-retryable error (400, 403, 404, etc.) — fail immediately
-            print(f"[NanoBanana] ✗ Non-retryable error: {e}")
+            print(f"[Omni] ✗ Non-retryable error: {e}")
             traceback.print_exc()
             return None, f"Gemini API Error: {error_str}"
 

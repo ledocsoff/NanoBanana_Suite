@@ -1,8 +1,8 @@
 """
-NB_GeeLarkScheduler V4 — Template-only GeeLark schedule filler
+Omni_GeeLarkScheduler V4 — Template-only GeeLark schedule filler
 ===============================================================
 Reads a GeeLark-exported .xlsx template, injects randomized scheduling
-dates and captions (from NB_GeminiCaptioner or defaults), and outputs:
+dates and captions (from Omni_GeminiCaptioner or defaults), and outputs:
   1. A ready-to-reimport .xlsx file
   2. An HTML calendar report (open in browser) for visual planning
 
@@ -40,8 +40,8 @@ build_calendar_html = _calendar_html.build_calendar_html
 build_color_map = _calendar_html.build_color_map
 
 
-class NB_GeeLarkScheduler:
-    CATEGORY = "NanaBanana/Tools"
+class Omni_GeeLarkScheduler:
+    CATEGORY = "Omni/Tools"
     RETURN_TYPES = ("STRING", "STRING",)
     RETURN_NAMES = ("output_file", "calendar_html",)
     FUNCTION = "schedule"
@@ -84,7 +84,7 @@ class NB_GeeLarkScheduler:
                 "captions": ("STRING", {
                     "default": "",
                     "forceInput": True,
-                    "tooltip": "Captions (depuis NB_StaticCaptioner ou NB_GeminiCaptioner). Ignoré pour les templates Edit Profile."
+                    "tooltip": "Captions (depuis Omni_StaticCaptioner ou Omni_GeminiCaptioner). Ignoré pour les templates Edit Profile."
                 }),
                 "days_spread": ("INT", {
                     "default": 7,
@@ -148,7 +148,7 @@ class NB_GeeLarkScheduler:
 
         # Auto-detect template type
         template_type = self._detect_template_type(template_file)
-        print(f"[NB_GeeLarkScheduler] 🔍 Type auto-détecté: {template_type}")
+        print(f"[Omni_GeeLarkScheduler] 🔍 Type auto-détecté: {template_type}")
 
         # Auto-generate output filename (strip intermediate "_filled" suffix for clean naming)
         base_name = os.path.splitext(template_file.strip().strip("'\""))[0]
@@ -157,11 +157,17 @@ class NB_GeeLarkScheduler:
         is_intermediate = "_filled" in base_name
 
         base_date = datetime.now().date() + timedelta(days=start_days_from_now)
+        
+        # OVERNIGHT FIX: If generating past midnight (00:00 - 04:00) for "today", 
+        # conceptually refer to "yesterday's" overnight block to fill the current night.
+        if start_days_from_now == 0 and datetime.now().hour < 4:
+            base_date -= timedelta(days=1)
+            print("[Omni_GeeLarkScheduler] 🌙 Détection post-minuit : alignement de la planification sur la nuit en cours.")
 
         caption_list = self._parse_captions(captions)
 
         block_labels = [k for k, v in BLOCK_KEYS.items() if v in active_keys]
-        print(f"[NB_GeeLarkScheduler] 📅 Blocs actifs: {', '.join(block_labels)} ({total_minutes} min dispo/jour)")
+        print(f"[Omni_GeeLarkScheduler] 📅 Blocs actifs: {', '.join(block_labels)} ({total_minutes} min dispo/jour)")
 
         # Fill template and collect scheduled events for the calendar
         events = self._fill_template(
@@ -178,10 +184,10 @@ class NB_GeeLarkScheduler:
         # Safe cleanup: delete intermediate _filled.xlsx only after full success
         if is_intermediate and os.path.exists(template_file):
             os.remove(template_file)
-            print(f"🧹 [NB_GeeLarkScheduler] Fichier intermédiaire supprimé: {os.path.basename(template_file)}")
+            print(f"🧹 [Omni_GeeLarkScheduler] Fichier intermédiaire supprimé: {os.path.basename(template_file)}")
 
-        print(f"[NB_GeeLarkScheduler] ✅ Fichier prêt: {output_file}")
-        print(f"[NB_GeeLarkScheduler] 📅 Calendrier: {html_path}")
+        print(f"[Omni_GeeLarkScheduler] ✅ Fichier prêt: {output_file}")
+        print(f"[Omni_GeeLarkScheduler] 📅 Calendrier: {html_path}")
         return (output_file, html_path)
 
     # ─────────────────────────────────────────────────────────────────
@@ -335,7 +341,7 @@ class NB_GeeLarkScheduler:
                         all_existing.append(best_dt)
                         attempts = 0
                     else:
-                        print(f"[NB_GeeLarkScheduler] ⚠️ Fenêtre saturée ({len(results)}/{count} slots placés). Poussée intelligente au jour suivant pour respecter max_simultaneous=1.")
+                        print(f"[Omni_GeeLarkScheduler] ⚠️ Fenêtre saturée ({len(results)}/{count} slots placés). Poussée intelligente au jour suivant pour respecter max_simultaneous=1.")
                         break
                 continue
 
@@ -366,7 +372,7 @@ class NB_GeeLarkScheduler:
         wb, data_rows = load_template(template_file)
 
         if not data_rows:
-            print("[NB_GeeLarkScheduler] ⚠ Template vide, rien à remplir.")
+            print("[Omni_GeeLarkScheduler] ⚠ Template vide, rien à remplir.")
             wb.save(output_file)
             return []
 
@@ -379,8 +385,8 @@ class NB_GeeLarkScheduler:
             if slots_per_day > 0:
                 needed_days = -(-total_tasks // slots_per_day) # ceil division equivalent
                 if needed_days > days_spread:
-                    print(f"[NB_GeeLarkScheduler] ⚠️ Capacité horaire insuffisante ({slots_per_day} slots/jour dispo).")
-                    print(f"[NB_GeeLarkScheduler] 🛠️ Auto-ajustement de days_spread : {days_spread} ➔ {needed_days} jours.")
+                    print(f"[Omni_GeeLarkScheduler] ⚠️ Capacité horaire insuffisante ({slots_per_day} slots/jour dispo).")
+                    print(f"[Omni_GeeLarkScheduler] 🛠️ Auto-ajustement de days_spread : {days_spread} ➔ {needed_days} jours.")
                     days_spread = needed_days
 
         if caption_list:
@@ -444,7 +450,10 @@ class NB_GeeLarkScheduler:
                 min_datetime = None
                 now = datetime.now()
                 current_date = base_date + timedelta(days=day_offset)
-                if current_date == now.date():
+                
+                # If we're scheduling a date that started in the past (or today),
+                # strictly filter out any times before NOW + 30 mins to prevent scheduling in the actual past.
+                if current_date <= now.date():
                     min_datetime = now + timedelta(minutes=30)
 
                 today_times = self._generate_times_for_day(
@@ -487,10 +496,10 @@ class NB_GeeLarkScheduler:
 
                 day_offset += 1
 
-            print(f"[NB_GeeLarkScheduler] 📅 {acc}: {row_idx} tâches planifiées sur {day_offset} jours")
+            print(f"[Omni_GeeLarkScheduler] 📅 {acc}: {row_idx} tâches planifiées sur {day_offset} jours")
 
         wb.save(output_file)
-        print(f"[NB_GeeLarkScheduler] 📄 Fichier sauvegardé: {output_file}")
+        print(f"[Omni_GeeLarkScheduler] 📄 Fichier sauvegardé: {output_file}")
         return events
 
     @classmethod

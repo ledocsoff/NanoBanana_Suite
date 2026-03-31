@@ -1,5 +1,5 @@
-class NB_PiAPIAuth:
-    CATEGORY = "NanaBanana/API"
+class Omni_PiAPIAuth:
+    CATEGORY = "Omni/API"
     RETURN_TYPES = ("PIAPI_AUTH",)
     RETURN_NAMES = ("auth",)
     FUNCTION = "authenticate"

@@ -1,10 +1,10 @@
 """
-NanoBanana Custom Nodes for ComfyUI
+Omni Custom Nodes for ComfyUI
 ====================================
 Integrates Google AI Studio (Gemini) image generation into ComfyUI workflows.
 
 Nodes:
-  - NanoBananaPromptToImage : Generate an image from a text prompt.
+  - OmniPromptToImage : Generate an image from a text prompt.
 
 Requirements:
   - google-genai  (`pip install google-genai`)
@@ -55,7 +55,7 @@ except ImportError:
 # Node - Prompt to Image
 # ──────────────────────────────────────────────────────────────────────────────
 
-class NanoBananaPromptToImage:
+class OmniPromptToImage:
     """
     Generate an image using a text prompt via Gemini.
     """
@@ -67,6 +67,7 @@ class NanoBananaPromptToImage:
         return {
             "required": {
                 "gemini_config":      ("GEMINI_CONFIG",),
+                "model":              (IMAGE_CAPABLE_MODELS, {"default": "gemini-3-pro-image-preview"}),
                 "prompt": (
                     "STRING",
                     {
@@ -90,12 +91,16 @@ class NanoBananaPromptToImage:
                 "batch_size":         ("INT",   {"default": 1, "min": 1, "max": 4, "step": 1}),
                 "delay_between_calls": ("FLOAT", {"default": 3.0, "min": 0.0, "max": 15.0, "step": 0.5}),
             },
+            "optional": {
+                "images": ("IMAGE",),
+                "skip_trigger": ("STRING", {"forceInput": True, "tooltip": "Status message to evaluate."})
+            }
         }
 
     RETURN_TYPES  = ("IMAGE", "STRING")
     RETURN_NAMES  = ("generated_image", "status_message")
     FUNCTION      = "run"
-    CATEGORY      = "NanoBanana"
+    CATEGORY      = "Omni"
     OUTPUT_NODE   = False
 
     def run(
@@ -105,16 +110,25 @@ class NanoBananaPromptToImage:
         negative_prompt:    str,
         aspect_ratio:       str,
         temperature:        float,
+        model:              str = "gemini-3-pro-image-preview",
         resolution:         str = "1K",
         max_retries:        int = 5,
         batch_size:         int = 1,
         delay_between_calls: float = 3.0,
+        images:             Optional[torch.Tensor] = None,
+        skip_trigger:       str = "",
     ) -> tuple[torch.Tensor, str]:
 
-        print("[NanoBananaPromptToImage] Starting text-to-image generation…")
+        if skip_trigger and skip_trigger.strip().upper().startswith("FAIL"):
+            print(f"[OmniPromptToImage] 🛑 Upstream failure detected. Skipping generation and propagating FAIL.")
+            # Return current images if they exist, otherwise a blank tensor
+            out = images if images is not None else torch.zeros((1, 512, 512, 3), dtype=torch.float32)
+            return (out, skip_trigger)
+
+        print(f"[OmniPromptToImage] Starting text-to-image generation with {model}…")
 
         # --- Client resolution via GeminiConfig ---
-        client, model = create_gemini_client(gemini_config)
+        client = create_gemini_client(gemini_config)
 
         # Assemble final text prompt
         final_prompt = prompt.strip()
@@ -141,23 +155,23 @@ class NanoBananaPromptToImage:
         
         for i in range(batch_size):
             if i > 0 and delay_between_calls > 0:
-                print(f"[NanoBananaPromptToImage] Waiting {delay_between_calls}s before next call...")
+                print(f"[OmniPromptToImage] Waiting {delay_between_calls}s before next call...")
                 time.sleep(delay_between_calls)
-            print(f"[NanoBananaPromptToImage] Generating image {i + 1}/{batch_size}...")
+            print(f"[OmniPromptToImage] Generating image {i + 1}/{batch_size}...")
             response, status_msg = call_with_retry(client, model, contents, config, max_retries)
             last_status_msg = status_msg
 
             if response is None:
-                print(f"[NanoBananaPromptToImage] ⚠ API Error on image {i + 1}: {status_msg}")
+                print(f"[OmniPromptToImage] ⚠ API Error on image {i + 1}: {status_msg}")
                 continue
 
             result_pil = extract_image_from_response(response)
 
             if result_pil is None:
-                print(f"[NanoBananaPromptToImage] ⚠ No image in response {i + 1}.")
+                print(f"[OmniPromptToImage] ⚠ No image in response {i + 1}.")
                 continue
 
-            print(f"[NanoBananaPromptToImage] ✓ Image {i + 1} Done — output size: {result_pil.size}")
+            print(f"[OmniPromptToImage] ✓ Image {i + 1} Done — output size: {result_pil.size}")
             results.append(pil_to_tensor(result_pil))
 
             del result_pil
@@ -171,9 +185,10 @@ class NanoBananaPromptToImage:
             out_tensor = torch.cat(results, dim=0)
             return (out_tensor, last_status_msg)
         else:
-            print("[NanoBananaPromptToImage] ⚠ No valid images generated. Returning blank tensor.")
+            print("[OmniPromptToImage] ⚠ No valid images generated. Returning blank tensor, emitting FAIL trigger.")
             blank = torch.zeros((1, 512, 512, 3), dtype=torch.float32)
-            return (blank, last_status_msg)
+            error_msg = f"FAIL: {last_status_msg}"
+            return (blank, error_msg)
 
     @classmethod
     def IS_CHANGED(cls, **kwargs):

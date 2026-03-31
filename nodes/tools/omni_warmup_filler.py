@@ -1,5 +1,5 @@
 """
-NB_AccountWarmupFiller — GeeLark "Instagram AI account warmup" filler
+Omni_AccountWarmupFiller — GeeLark "Instagram AI account warmup" filler
 ======================================================================
 Fills the warmup template with sequential timing, random scroll counts
 and random search keywords. Supports Time Block presets with direct
@@ -45,8 +45,8 @@ build_calendar_html = _calendar_html.build_calendar_html
 build_color_map = _calendar_html.build_color_map
 
 
-class NB_AccountWarmupFiller:
-    CATEGORY = "NanaBanana/Tools"
+class Omni_AccountWarmupFiller:
+    CATEGORY = "Omni/Tools"
     RETURN_TYPES = ("STRING", "STRING",)
     RETURN_NAMES = ("output_file", "calendar_html",)
     FUNCTION = "fill_warmup"
@@ -160,10 +160,10 @@ class NB_AccountWarmupFiller:
         output_file = f"{base_name}_scheduled.xlsx"
 
         if not schema:
-            raise Exception("[NB_AccountWarmupFiller] Erreur: schéma 'account_warmup' introuvable dans xlsx_utils.py")
+            raise Exception("[Omni_AccountWarmupFiller] Erreur: schéma 'account_warmup' introuvable dans xlsx_utils.py")
 
         if not rows:
-            print("[NB_AccountWarmupFiller] ⚠ Fichier vide.")
+            print("[Omni_AccountWarmupFiller] ⚠ Fichier vide.")
             out_path = save_template(wb, output_file)
             return (out_path, "")
 
@@ -174,19 +174,13 @@ class NB_AccountWarmupFiller:
         if not keywords_list:
             keywords_list = ["aesthetic"]
 
-        # Calculate optimal delay: spread accounts evenly across the total block duration
-        nb_accounts = len(rows)
-        ideal_delay = total_block_dur / max(nb_accounts, 1)
+        # Tight packing: use minimum delay + small anti-pattern jitter
+        # Goal: finish warmup ASAP to free GeeLark for other tasks
+        omni_accounts = len(rows)
+        base_delay = MIN_SEQUENTIAL_DELAY  # 15 min minimum between accounts
+        max_jitter = 8  # 0-8 min random bonus to break pattern
 
-        # Apply guard-rail: never go below MIN_SEQUENTIAL_DELAY
-        if ideal_delay < MIN_SEQUENTIAL_DELAY:
-            print(f"🍌 [NB_AccountWarmupFiller] ⚠️ {nb_accounts} comptes dans {total_block_dur} min = "
-                  f"{ideal_delay:.0f} min/compte. Minimum appliqué: {MIN_SEQUENTIAL_DELAY} min.")
-            print(f"🍌 [NB_AccountWarmupFiller] ⚠️ Les tâches vont déborder sur les jours suivants.")
-            ideal_delay = MIN_SEQUENTIAL_DELAY
-
-        # Variation range: ±15% of ideal delay, clamped to ±5 min max, guaranteed at least 1 min
-        variation = min(max(1, int(ideal_delay * 0.15)), 5)
+        estimated_total = omni_accounts * (base_delay + max_jitter // 2)
 
         # Build start datetime — first merged range start hour
         base_date = datetime.now().date() + timedelta(days=start_days_from_now)
@@ -200,8 +194,8 @@ class NB_AccountWarmupFiller:
             current_dt = safe_now
 
         block_labels = [k for k, v in BLOCK_KEYS.items() if v in active_keys]
-        print(f"🍌 [NB_AccountWarmupFiller] ⏳ {nb_accounts} comptes | Blocs: {', '.join(block_labels)} ({total_block_dur} min)")
-        print(f"🍌 [NB_AccountWarmupFiller] 📐 Délai calculé: ~{ideal_delay:.0f} min/compte (±{variation} min)")
+        print(f"[Omni_AccountWarmupFiller] ⏳ {omni_accounts} comptes | Blocs: {', '.join(block_labels)} ({total_block_dur} min dispo)")
+        print(f"[Omni_AccountWarmupFiller] 📐 Packing serré: {base_delay}-{base_delay + max_jitter} min/compte (~{estimated_total} min total estimé)")
 
         # Collect events for calendar + build color map
         accounts = get_account_names(rows)
@@ -238,8 +232,8 @@ class NB_AccountWarmupFiller:
 
             # Advance time for the NEXT account
             if i < len(rows) - 1:
-                delay = int(ideal_delay) + random.randint(-variation, variation)
-                delay = max(delay, MIN_SEQUENTIAL_DELAY)
+                # Tight packing delay: base minimum + tiny jitter
+                delay = base_delay + random.randint(0, max_jitter)
                 current_dt += timedelta(minutes=delay)
 
         output_path = save_template(wb, output_file)
@@ -253,9 +247,9 @@ class NB_AccountWarmupFiller:
         # Show the actual local times for user reference
         first_local = rows[0][schema["release_time"] - 1].value
         last_local = rows[-1][schema["release_time"] - 1].value
-        print(f"🍌 [NB_AccountWarmupFiller] ✅ Fichier prêt: {output_path}")
-        print(f"🍌 [NB_AccountWarmupFiller] 📅 Calendrier: {html_path}")
-        print(f"🍌 [NB_AccountWarmupFiller] 🕐 {first_local} → {last_local} (heure GeeLark/Paris)")
+        print(f"[Omni_AccountWarmupFiller] ✅ Fichier prêt: {output_path}")
+        print(f"[Omni_AccountWarmupFiller] 📅 Calendrier: {html_path}")
+        print(f"[Omni_AccountWarmupFiller] 🕐 {first_local} → {last_local} (heure GeeLark/Paris)")
 
         return (output_path, html_path)
 

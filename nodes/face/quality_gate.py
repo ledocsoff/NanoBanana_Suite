@@ -14,35 +14,54 @@ if _custom_nodes_dir not in sys.path:
     sys.path.insert(0, _custom_nodes_dir)
 
 from shared.gemini_client import (
-    create_gemini_client, tensor_to_pil, pil_to_tensor, extract_image_from_response,
+    create_gemini_client, tensor_to_pil, TEXT_MODELS,
 )
 
 # ── Prompts ──────────────────────────────────────────────────────────────────
 
-QUALITY_PROMPT = """Image 1 is the reference identity (face, hair, skin tone, overall appearance).
-Image 2 is the original scene before any modification (pose, expression, lighting, background).
-Image 3 is the face swap result to validate.
+BEST_OF_N_PROMPT = {
+    "face_swap": """You are evaluating multiple candidates for a face swap operation.
+Image 1 is the reference identity (face, hair, skin tone, overall appearance).
+Image 2 is the original scene before modification (pose, expression, lighting, background).
+The subsequent images are Candidates 1 to N, which swapped the face in Image 2 with the face from Image 1.
 
-Your job: determine if Image 3 is a successful face swap.
+Your task:
+1. Eliminate candidates that fail to preserve the identity of Image 1 perfectly.
+2. Eliminate candidates that alter the original scene (body posture, expression, lighting, background) from Image 2.
+3. Eliminate candidates with obvious AI artifacts (blurry edges, mismatched skin texture, uncanny blending).
+4. From the remaining acceptable candidates, select the SINGLE BEST candidate that looks the most natural and photorealistic.
 
-CHECK 1 — IDENTITY: Does the person in Image 3 match Image 1? Same face shape, same hair (style, color, volume), same skin tone. The person in Image 3 must clearly BE the person from Image 1, not a blend or hybrid.
+If ALL candidates fail one of the checks above and are unacceptable, your `best_candidate` must be 0.
+Otherwise, return the integer number of the best candidate (1 to N).
 
-CHECK 2 — SCENE PRESERVATION: Is the scene from Image 2 preserved in Image 3? Same body posture, same head angle, same facial expression, same lighting direction, same background. Nothing should have changed except the person's identity.
+You must respond ONLY with a valid JSON object matching this schema:
+{
+  "best_candidate": integer (0 if all fail, or 1 to N for the winner),
+  "reason": "Brief explanation of why this specific candidate won, or why they all failed."
+}""",
 
-CHECK 3 — ARTIFACTS: Is Image 3 free of obvious AI artifacts? No blurring at face edges, no skin texture mismatch, no hair/background bleeding, no uncanny valley effect.
+    "outfit_swap": """You are evaluating multiple candidates for an outfit/clothing swap operation.
+Image 1 is the reference outfit/clothing.
+Image 2 is the original person and scene before modification.
+The subsequent images are Candidates 1 to N, which swapped the clothing on the person in Image 2 to match Image 1.
 
-If ALL three checks pass → respond with: PASS
-If ANY check fails → respond with: FAIL|<short reason in 10 words max>
+Your task:
+1. Eliminate candidates that fail to match the style, color, or texture of the clothing from Image 1.
+2. Eliminate candidates that alter the person's identity, face, expression, hair, or posture from Image 2.
+3. Eliminate candidates with obvious AI artifacts (weird blending, extra limbs, uncanny background distortion).
+4. From the remaining acceptable candidates, select the SINGLE BEST candidate that looks the most natural and photorealistic.
 
-Respond with ONLY "PASS" or "FAIL|reason". Nothing else. No explanation, no markdown."""
+If ALL candidates fail one of the checks above and are unacceptable, your `best_candidate` must be 0.
+Otherwise, return the integer number of the best candidate (1 to N).
 
-RETRY_SWAP_PROMPT = (
-    "IMAGE 1 is the source identity. IMAGE 2 is the target scene.\n"
-    "Replace the face in IMAGE 2 with the face from IMAGE 1.\n"
-    "Preserve everything else in IMAGE 2 exactly: background, pose, body, lighting, clothing, expression angle.\n"
-    "The result must be photorealistic with no visible seams, artifacts, or blending issues.\n\n"
-    "Negative instructions (DO NOT INCLUDE): low quality, bad anatomy, deformed, mutated, blurry edges"
-)
+You must respond ONLY with a valid JSON object matching this schema:
+{
+  "best_candidate": integer (0 if all fail, or 1 to N for the winner),
+  "reason": "Brief explanation of why this specific candidate won, or why they all failed."
+}"""
+}
+
+
 
 
 def _pil_to_bytes(img: Image.Image) -> bytes:
@@ -51,25 +70,24 @@ def _pil_to_bytes(img: Image.Image) -> bytes:
     return buf.getvalue()
 
 
-class NanoBananaQualityGate:
-    """Binary PASS/FAIL gate with built-in retry swap.
+class OmniQualityGate:
+    """Binary PASS/FAIL gate with batch filtering.
 
-    1. Validates the swapped_image from the Swap node
-    2. If PASS → forwards the image
-    3. If FAIL → internally re-generates a new swap using Gemini (same source + target)
-    4. Validates the new attempt → repeats up to max_retries
-    5. If all retries fail → returns empty tensor (Kling MC skips automatically)
+    1. Receives a batch of swapped images from the Swap node (N images).
+    2. Validates images sequentially.
+    3. The first image that PASSES is returned immediately as a [1, H, W, C] tensor.
+    4. If all images FAIL, returns the first image with passed=False (fallback).
     """
 
-    CATEGORY = "NanoBanana"
+    CATEGORY = "Omni"
     RETURN_TYPES = ("IMAGE", "BOOLEAN", "STRING")
     RETURN_NAMES = ("image", "passed", "report")
     FUNCTION = "gate"
     OUTPUT_NODE = False
 
     DESCRIPTION = (
-        "Validates a face swap via Gemini Vision. On FAIL, internally retries the swap "
-        "up to max_retries times. PASS → image forwarded. All FAIL → empty tensor."
+        "Validates face swaps via Gemini Vision. Evaluates a batch of images sequentially. "
+        "Outputs the first image that passes quality checks. If all fail, returns first image as fallback."
     )
 
     @classmethod
@@ -77,134 +95,105 @@ class NanoBananaQualityGate:
         return {
             "required": {
                 "gemini_config": ("GEMINI_CONFIG",),
+                "model": (TEXT_MODELS, {"default": "gemini-2.5-flash"}),
                 "source_face":   ("IMAGE",),
                 "target_frame":  ("IMAGE",),
                 "swapped_image": ("IMAGE",),
-                "max_retries":   ("INT", {
-                    "default": 2, "min": 1, "max": 5, "step": 1,
-                    "tooltip": "Nombre de nouvelles tentatives de swap si le premier échoue. "
-                               "Chaque retry = 1 appel swap + 1 appel validation."
-                }),
+                "mode": (["face_swap", "outfit_swap"], {"default": "face_swap"}),
             },
+            "optional": {
+                "skip_trigger": ("STRING", {"forceInput": True, "tooltip": "Status message to evaluate."})
+            }
         }
 
-    def gate(self, gemini_config, source_face, target_frame, swapped_image, max_retries=2):
-        client, model = create_gemini_client(gemini_config)
+    def gate(self, gemini_config, source_face, target_frame, swapped_image, mode="face_swap", model="gemini-2.5-flash", skip_trigger=""):
+        if skip_trigger and skip_trigger.strip().upper().startswith("FAIL"):
+            print(f"[OmniQualityGate] 🛑 Upstream failure detected. Skipping validation and propagating FAIL.")
+            # Return first image as fallback but with the fail trigger
+            first_candidate = swapped_image[0].unsqueeze(0)
+            return (first_candidate, False, skip_trigger)
 
-        # Pre-convert source and target to bytes once (reused across retries)
-        source_bytes = _pil_to_bytes(tensor_to_pil(source_face))
-        target_bytes = _pil_to_bytes(tensor_to_pil(target_frame))
+        client = create_gemini_client(gemini_config)
 
-        # ── Attempt 0: validate the swap from the upstream Swap node ─────────
-        current_image = swapped_image
-        all_reasons = []
+        # Pre-convert source and target to bytes once (reused across the batch)
+        # Note: Extract single image tensor [1, H, W, C] safely
+        def _get_first_image_bytes(t):
+            t_single = t[0].unsqueeze(0) if t.dim() == 4 else t
+            return _pil_to_bytes(tensor_to_pil(t_single))
 
-        total_attempts = 1 + max_retries  # first check + N retries
-        for attempt in range(total_attempts):
-            is_retry = attempt > 0
-            label = f"retry {attempt}/{max_retries}" if is_retry else "initial swap"
+        source_bytes = _get_first_image_bytes(source_face)
+        target_bytes = _get_first_image_bytes(target_frame)
 
-            print(f"[QualityGate] 🔍 Validating {label}…")
-
-            passed, reason = self._validate(client, model, source_bytes, target_bytes, current_image)
-
-            if passed:
-                report = f"✅ PASS — Swap validated ({label})"
-                if all_reasons:
-                    report += f" | Previous failures: {'; '.join(all_reasons)}"
-                print(f"[QualityGate] {report}")
-                return (current_image, True, report)
-
-            # FAIL
-            all_reasons.append(f"{label}: {reason}")
-            print(f"[QualityGate] ❌ FAIL ({label}): {reason}")
-
-            # If retries remaining, generate a new swap internally
-            if attempt < total_attempts - 1:
-                print(f"[QualityGate] 🔄 Generating new swap attempt ({attempt + 1}/{max_retries})…")
-                new_image = self._retry_swap(client, model, source_bytes, target_bytes)
-                if new_image is not None:
-                    current_image = new_image
-                else:
-                    print("[QualityGate] ⚠ Internal swap failed — skipping remaining retries")
-                    break
-
-        # All attempts failed
-        report = f"❌ ALL FAILED ({len(all_reasons)} attempts) — {'; '.join(all_reasons)}"
-        print(f"[QualityGate] {report}")
-        return (torch.zeros_like(swapped_image), False, report)
-
-    def _validate(self, client, model, source_bytes, target_bytes, image_tensor):
-        """Validate a swap result. Returns (passed, reason)."""
-        swap_bytes = _pil_to_bytes(tensor_to_pil(image_tensor))
+        batch_size = swapped_image.shape[0]
+        
         contents = [
-            "IMAGE 1 — Reference identity:",
+            "Image 1 — Reference:",
             types.Part.from_bytes(data=source_bytes, mime_type="image/png"),
-            "IMAGE 2 — Original scene:",
+            "Image 2 — Original scene:",
             types.Part.from_bytes(data=target_bytes, mime_type="image/png"),
-            "IMAGE 3 — Swap result to validate:",
-            types.Part.from_bytes(data=swap_bytes, mime_type="image/png"),
-            QUALITY_PROMPT,
         ]
 
-        response_text = self._call_gemini_text(client, model, contents)
-        return self._parse_response(response_text)
+        # Inject all candidates sequentially
+        for i in range(batch_size):
+            candidate_tensor = swapped_image[i].unsqueeze(0)
+            candidate_bytes = _pil_to_bytes(tensor_to_pil(candidate_tensor))
+            contents.extend([
+                f"Candidate {i + 1}:",
+                types.Part.from_bytes(data=candidate_bytes, mime_type="image/png")
+            ])
+            
+        contents.append(BEST_OF_N_PROMPT[mode])
 
-    def _retry_swap(self, client, model, source_bytes, target_bytes):
-        """Generate a new face swap internally. Returns IMAGE tensor or None."""
-        contents = [
-            "IMAGE 1 — Source identity:",
-            types.Part.from_bytes(data=source_bytes, mime_type="image/png"),
-            "IMAGE 2 — Target scene:",
-            types.Part.from_bytes(data=target_bytes, mime_type="image/png"),
-            RETRY_SWAP_PROMPT,
-        ]
+        print(f"[OmniQualityGate] Evaluating {batch_size} candidate(s) simultaneously...")
+        
+        result_json = self._call_gemini_json(client, model, contents)
+        best_id = result_json.get("best_candidate", 0)
+        reason = result_json.get("reason", "No reason provided")
+
+        if not isinstance(best_id, int):
+            try:
+                best_id = int(best_id)
+            except ValueError:
+                print(f"[OmniQualityGate] ⚠ Invalid best_candidate parsed '{best_id}'. Defaulting to 1.")
+                best_id = 1
+                
+        # Handle fallback when the model eliminates all candidates (best_id = 0)
+        if best_id <= 0 or best_id > batch_size:
+            print(f"[OmniQualityGate] ❌ ALL FAILED. ({reason})")
+            print(f"[OmniQualityGate] ⚠ Utilizing best-effort fallback (Returning Candidate 1). Emitting FAIL trigger.")
+            first_candidate = swapped_image[0].unsqueeze(0)
+            return (first_candidate, False, f"FAIL: {reason}")
+            
+        # Success
+        winner_index = best_id - 1
+        print(f"[OmniQualityGate] ✅ WINNER: Candidate {best_id}/{batch_size} — {reason}")
+        winner_tensor = swapped_image[winner_index].unsqueeze(0)
+        return (winner_tensor, True, f"✅ PASS (Candidate {best_id}): {reason}")
+
+    def _call_gemini_json(self, client, model, contents) -> dict:
+        """Call Gemini enforcing a JSON structured response. 1 retry after 5s."""
+        import json
         config = {
-            "response_modalities": ["IMAGE"],
-            "temperature": 1.0,
+            "response_modalities": ["TEXT"],
+            "temperature": 0.1,
+            "response_mime_type": "application/json",
         }
-        try:
-            response = client.models.generate_content(model=model, contents=contents, config=config)
-            result_pil = extract_image_from_response(response)
-            if result_pil:
-                print(f"[QualityGate] ✓ Internal swap generated — {result_pil.size}")
-                return pil_to_tensor(result_pil)
-            print("[QualityGate] ⚠ No image in retry response")
-            return None
-        except Exception as e:
-            print(f"[QualityGate] ⚠ Internal swap error: {e}")
-            return None
-
-    def _call_gemini_text(self, client, model, contents) -> str:
-        """Call Gemini for TEXT response. 1 retry after 5s. Fail-open on error."""
-        config = {"response_modalities": ["TEXT"], "temperature": 0.1}
         for attempt in range(2):
             try:
                 response = client.models.generate_content(model=model, contents=contents, config=config)
                 if response and hasattr(response, "text") and response.text:
-                    return response.text.strip()
-                return "FAIL|empty API response"
+                    return json.loads(response.text.strip())
+                raise ValueError("Empty API response")
             except Exception as e:
+                # If JSON decode fails or connection fails
                 if attempt == 0:
-                    print(f"[QualityGate] ⚠ Validation API error: {e}. Retrying in 5s…")
+                    print(f"[OmniQualityGate] ⚠ Validation API error: {e}. Retrying in 5s…")
                     time.sleep(5)
                 else:
-                    print(f"[QualityGate] ⚠ Retry failed: {e}. Fail-open → PASS")
-                    return f"PASS_API_ERROR|{str(e)[:80]}"
-        return "PASS_API_ERROR|unknown"
-
-    def _parse_response(self, text: str) -> tuple[bool, str]:
-        if text.startswith("PASS"):
-            if "API_ERROR" in text:
-                parts = text.split("|", 1)
-                reason = parts[1].strip() if len(parts) > 1 else "API unreachable"
-                return True, f"⚠️ API error, could not validate: {reason}"
-            return True, ""
-        elif text.startswith("FAIL"):
-            parts = text.split("|", 1)
-            return False, parts[1].strip() if len(parts) > 1 else "unspecified"
-        else:
-            return False, f"unexpected response: {text[:100]}"
+                    print(f"[OmniQualityGate] ⚠ Retry failed. Fail-open → Defaulting to candidate 1.")
+                    return {"best_candidate": 1, "reason": f"API Error: {str(e)[:80]}"}
+                    
+        return {"best_candidate": 1, "reason": "API Error: Unknown"}
 
     @classmethod
     def IS_CHANGED(cls, **kwargs):

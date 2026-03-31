@@ -1,5 +1,5 @@
 """
-NanoBanana Chooser — Interactive Image Selection
+Omni Chooser — Interactive Image Selection
 ===============================================
 Pauses ComfyUI execution, sends temporary tensors to the Javascript frontend, 
 and waits for the user to make a manual selection before resuming.
@@ -57,7 +57,7 @@ def _tensor_to_pil(tensor: torch.Tensor) -> Image.Image:
 # Node
 # ──────────────────────────────────────────────────────────────────────────────
 
-class NanoBananaChooser:
+class OmniChooser:
     DESCRIPTION = "Pause execution and wait for manual image selection via UI."
 
     @classmethod
@@ -70,22 +70,36 @@ class NanoBananaChooser:
             },
             "hidden": {
                 "unique_id": "UNIQUE_ID"
+            },
+            "optional": {
+                "skip_trigger": ("STRING", {"forceInput": True, "tooltip": "Status message to evaluate."})
             }
         }
 
-    RETURN_TYPES = ("IMAGE", "INT")
-    RETURN_NAMES = ("images", "count")
+    RETURN_TYPES = ("IMAGE", "INT", "STRING")
+    RETURN_NAMES = ("images", "count", "skip_trigger")
     FUNCTION = "run"
-    CATEGORY = "NanoBanana"
+    CATEGORY = "Omni"
     OUTPUT_NODE = True 
 
-    def run(self, images: torch.Tensor, mode: str, timeout: int, unique_id: str):
+    def run(self, images: torch.Tensor, mode: str, timeout: int, unique_id: str, skip_trigger: str = ""):
         batch_size = images.shape[0]
         
+        # 0. Skip Trigger analysis
+        if skip_trigger:
+            t_upper = skip_trigger.upper()
+            has_error = "FAIL" in t_upper or "❌" in t_upper
+            has_success = "SUCCESS" in t_upper or "OK" in t_upper or "✅" in t_upper
+            
+            # If ONLY errors are found, skip chooser UI and propagate the error
+            if has_error and not has_success:
+                print(f"[OmniChooser] 🛑 Upstream failure detected ({skip_trigger.strip()}). Skipping manual UI selection.")
+                return (images, batch_size, skip_trigger)
+
         # 1. Single image fallback (no choice required)
         if batch_size == 1:
-            print(f"[NanoBananaChooser] Single image received — passing through (no selection needed)")
-            return (images, 1)
+            print(f"[OmniChooser] Single image received — passing through (no selection needed)")
+            return (images, 1, skip_trigger)
 
         temp_dir = folder_paths.get_temp_directory()
         os.makedirs(temp_dir, exist_ok=True)
@@ -95,7 +109,7 @@ class NanoBananaChooser:
         saved_files = []
         ui_images = []
         
-        print(f"[NanoBananaChooser] Received {batch_size} images — waiting for user selection…")
+        print(f"[OmniChooser] Received {batch_size} images — waiting for user selection…")
         
         for i in range(batch_size):
             img_pil = _tensor_to_pil(images[i])
@@ -128,8 +142,8 @@ class NanoBananaChooser:
             "timeout": timeout
         })
         
-        print(f"[NanoBananaChooser] ⏳ Waiting for selection in ComfyUI interface… (if you don't see the chooser, refresh the page)")
-        print(f"[NanoBananaChooser] ⏱ Timeout set to {timeout}s.")
+        print(f"[OmniChooser] ⏳ Waiting for selection in ComfyUI interface… (if you don't see the chooser, refresh the page)")
+        print(f"[OmniChooser] ⏱ Timeout set to {timeout}s.")
         
         # 5. Polling wait — allows ComfyUI workflow Cancellation to immediately exit
         elapsed = 0.0
@@ -158,31 +172,33 @@ class NanoBananaChooser:
                 if os.path.exists(f):
                     os.remove(f)
             except Exception as e:
-                print(f"[NanoBananaChooser] ⚠ Failed to delete temp file {f}: {e}")
+                print(f"[OmniChooser] ⚠ Failed to delete temp file {f}: {e}")
                 
         # Exception if user clicked "Cancel Queue" in ComfyUI
         if interrupted_by_user:
-            raise InterruptedError("[NanoBananaChooser] Workflow cancelled by user.")
+            raise InterruptedError("[OmniChooser] Workflow cancelled by user.")
             
         # Handle strict Timeout
         if not selected_indices:
-            print(f"[NanoBananaChooser] ⚠ Timeout reached ({timeout}s) or empty selection — passing all {batch_size} images through")
-            return (images, batch_size)
+            print(f"[OmniChooser] ⚠ Timeout reached ({timeout}s) or empty selection — passing all {batch_size} images through")
+            return (images, batch_size, skip_trigger)
             
         # 7. Extract the chosen tensors via array slicing
         selected_indices.sort()
-        print(f"[NanoBananaChooser] ✓ User selected image(s): {selected_indices} — resuming workflow")
+        print(f"[OmniChooser] ✓ User selected image(s): {selected_indices} — resuming workflow")
         
         # Secure bounds selection
         selected_tensors = [images[i] for i in selected_indices if i >= 0 and i < batch_size]
         
         if not selected_tensors:
-            print(f"[NanoBananaChooser] ❌ Bad indices received, falling back to all images.")
-            return (images, batch_size)
+            print(f"[OmniChooser] ❌ Bad indices received, falling back to all images.")
+            return (images, batch_size, skip_trigger)
             
         # Stack back (B,H,W,C)
         final_tensor = torch.stack(selected_tensors)
-        return (final_tensor, len(selected_tensors))
+        
+        trigger_out = skip_trigger if skip_trigger else "SUCCESS: Manual Selection"
+        return (final_tensor, len(selected_tensors), trigger_out)
 
     @classmethod
     def IS_CHANGED(cls, **kwargs):

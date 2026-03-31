@@ -27,6 +27,7 @@ try:
         extract_image_from_response,
         tensor_to_pil,
         pil_to_tensor,
+        TEXT_MODELS,
     )
 except ImportError:
     raise ImportError(
@@ -41,7 +42,7 @@ AVAILABLE_MODELS = IMAGE_CAPABLE_MODELS
 # Node – AI Director (NLP extraction via Gemini 2.5 Flash)
 # ──────────────────────────────────────────────────────────────────────────────
 
-class NanoBananaAIDirector:
+class OmniAIDirector:
     """Extracts location, apparel, and photo_type from a natural language prompt using Gemini 2.5 Flash."""
     DESCRIPTION = "Extracts location, apparel, and photo_type from a natural language prompt using Gemini."
 
@@ -50,6 +51,7 @@ class NanoBananaAIDirector:
         return {
             "required": {
                 "gemini_config": ("GEMINI_CONFIG",),
+                "model": (TEXT_MODELS, {"default": "gemini-2.5-flash"}),
                 "natural_prompt": ("STRING", {"multiline": True, "default": "une photo d'elle sur une plage avec un bikini rouge et un chapeau"}),
                 "photo_type": (["selfie", "third_person", "mirror"], {"default": "third_person"}),
                 "max_retries": ("INT", {"default": 5, "min": 1, "max": 15, "step": 1}),
@@ -59,10 +61,10 @@ class NanoBananaAIDirector:
     RETURN_TYPES = ("STRING", "STRING", "STRING")
     RETURN_NAMES = ("location", "apparel", "photo_type")
     FUNCTION = "run"
-    CATEGORY = "NanoBanana/Matrix Core"
+    CATEGORY = "Omni/Matrix Core"
 
-    def run(self, gemini_config: dict, natural_prompt: str, photo_type: str, max_retries: int) -> tuple[str, str, str]:
-        print(f"[NanoBananaAIDirector] Running NLP on text: '{natural_prompt[:50]}...'")
+    def run(self, gemini_config: dict, natural_prompt: str, photo_type: str, max_retries: int, model: str = "gemini-2.5-flash") -> tuple[str, str, str]:
+        print(f"[OmniAIDirector] Running NLP on text with {model}: '{natural_prompt[:50]}...'")
         
         system_instruction = '''You are an expert AI photo director. The user provides a natural language description (often French or English) of a photo they want.
 Extract the "location" (which MUST include the environment, lighting, subject's pose, and action) and "apparel".
@@ -82,16 +84,16 @@ Output ONLY valid JSON.'''
         
         # AIDirector uses gemini-2.5-flash (text model for NLP), not image models
         # We still use the GeminiConfig for client creation (provider/auth)
-        client, _ = create_gemini_client(gemini_config)
+        client = create_gemini_client(gemini_config)
 
         config: dict[str, Any] = {
             "response_mime_type": "application/json",
             "temperature": 0.2
         }
         
-        response, status = call_with_retry(client, "gemini-2.5-flash", contents, config, max_retries)
+        response, status = call_with_retry(client, model, contents, config, max_retries)
         if response is None:
-            print(f"[NanoBananaAIDirector] ⚠ AI Director NLP Failed: {status}")
+            print(f"[OmniAIDirector] ⚠ AI Director NLP Failed: {status}")
             return ("", "", photo_type)
             
         try:
@@ -103,10 +105,10 @@ Output ONLY valid JSON.'''
             loc = parsed.get("location", "")
             app = parsed.get("apparel", "")
             
-            print(f"[NanoBananaAIDirector] ✓ NLP Parsed successfully.")
+            print(f"[OmniAIDirector] ✓ NLP Parsed successfully.")
             return (loc, app, photo_type)
         except Exception as e:
-            print(f"[NanoBananaAIDirector] ⚠ Failed to parse NLP JSON: {e}")
+            print(f"[OmniAIDirector] ⚠ Failed to parse NLP JSON: {e}")
             return ("", "", photo_type)
 
     @classmethod
@@ -119,7 +121,7 @@ Output ONLY valid JSON.'''
 # ──────────────────────────────────────────────────────────────────────────────
 # Node – Matrix Builder
 # ──────────────────────────────────────────────────────────────────────────────
-class NanoBananaMatrixBuilder:
+class OmniMatrixBuilder:
     """Constructs the sophisticated JSON Matrix and Imperfection layers for Gemini."""
     DESCRIPTION = "Constructs the sophisticated JSON Matrix and Imperfection layers for Gemini."
 
@@ -138,7 +140,7 @@ class NanoBananaMatrixBuilder:
     RETURN_TYPES = ("STRING", "STRING")
     RETURN_NAMES = ("system_instruction", "json_matrix")
     FUNCTION = "run"
-    CATEGORY = "NanoBanana/Matrix Core"
+    CATEGORY = "Omni/Matrix Core"
 
     def generate_imperfections(self, seed: int) -> list[str]:
         full_imperfections = [
@@ -255,7 +257,7 @@ NEGATIVES: {base_neg}
 # ──────────────────────────────────────────────────────────────────────────────
 # Node – Vision API (Renderer)
 # ──────────────────────────────────────────────────────────────────────────────
-class NanoBananaVisionAPI:
+class OmniVisionAPI:
     """Runs the heavy Image Generation via Gemini Vision, with auto-scaling and safety fallback."""
     DESCRIPTION = "Runs the heavy Image Generation via Gemini Vision, with auto-scaling and safety fallback."
 
@@ -264,6 +266,7 @@ class NanoBananaVisionAPI:
         return {
             "required": {
                 "gemini_config": ("GEMINI_CONFIG",),
+                "model": (IMAGE_CAPABLE_MODELS, {"default": "gemini-3-pro-image-preview"}),
                 "system_instruction": ("STRING", {"multiline": True, "forceInput": True}),
                 "json_matrix": ("STRING", {"multiline": True, "forceInput": True}),
                 "aspect_ratio": (ASPECT_RATIOS,),
@@ -281,7 +284,7 @@ class NanoBananaVisionAPI:
     RETURN_TYPES = ("IMAGE", "STRING")
     RETURN_NAMES = ("generated_image", "status_message")
     FUNCTION = "run"
-    CATEGORY = "NanoBanana/Matrix Core"
+    CATEGORY = "Omni/Matrix Core"
     OUTPUT_NODE = False
 
     def run(
@@ -295,12 +298,13 @@ class NanoBananaVisionAPI:
         max_retries: int = 5,
         batch_size: int = 1,
         delay_between_calls: float = 3.0,
+        model: str = "gemini-3-pro-image-preview",
         image: torch.Tensor = None,
     ) -> tuple[torch.Tensor, str]:
         
-        print(f"[NanoBananaVisionAPI] Generating {batch_size} image(s)...")
+        print(f"[OmniVisionAPI] Generating {batch_size} image(s) with {model}...")
 
-        client, model = create_gemini_client(gemini_config)
+        client = create_gemini_client(gemini_config)
 
         contents = []
         
@@ -339,12 +343,12 @@ class NanoBananaVisionAPI:
             else:
                 matrix_dict: dict[str, Any] = {"directives": {"global_seed": 1337}, "subject": {"apparel": "unknown"}}
         except Exception as e:
-            print(f"[NanoBananaVisionAPI] ⚠ Could not parse JSON Matrix: {e}")
+            print(f"[OmniVisionAPI] ⚠ Could not parse JSON Matrix: {e}")
             matrix_dict: dict[str, Any] = {"directives": {"global_seed": 1337}, "subject": {"apparel": "unknown"}}
 
         for i in range(batch_size):
             if i > 0 and delay_between_calls > 0:
-                print(f"[NanoBananaVisionAPI] Waiting {delay_between_calls}s before next call...")
+                print(f"[OmniVisionAPI] Waiting {delay_between_calls}s before next call...")
                 time.sleep(delay_between_calls)
             directives = matrix_dict.get("directives", {})
             if isinstance(directives, dict):
@@ -360,12 +364,12 @@ class NanoBananaVisionAPI:
                 if len(contents) > 0:
                     contents[len(contents)-1] = p_text
 
-            print(f"[NanoBananaVisionAPI] Calling Gemini Vision... {i + 1}/{batch_size}")
+            print(f"[OmniVisionAPI] Calling Gemini Vision... {i + 1}/{batch_size}")
             response, status_msg = call_with_retry(client, model, contents, config, max_retries)
             
             # API Fallback logic (Amelioration 2 & 3)
             if response is None and status_msg and "SAFETY" in status_msg.upper():
-                print(f"[NanoBananaVisionAPI] ⚠ Safety Block triggered! Initiating automatic fallback with high modesty...")
+                print(f"[OmniVisionAPI] ⚠ Safety Block triggered! Initiating automatic fallback with high modesty...")
                 if "directives" in matrix_dict and isinstance(matrix_dict["directives"], dict):
                     matrix_dict["directives"]["modestyLevel"] = "high"
                 if "subject" in matrix_dict and isinstance(matrix_dict["subject"], dict):
@@ -380,15 +384,15 @@ class NanoBananaVisionAPI:
             last_status_msg = status_msg
 
             if response is None:
-                print(f"[NanoBananaVisionAPI] ⚠ API Error on image {i + 1}: {status_msg}")
+                print(f"[OmniVisionAPI] ⚠ API Error on image {i + 1}: {status_msg}")
                 continue
 
             result_pil = extract_image_from_response(response)
             if result_pil is None:
-                print(f"[NanoBananaVisionAPI] ⚠ No image in response {i + 1}.")
+                print(f"[OmniVisionAPI] ⚠ No image in response {i + 1}.")
                 continue
 
-            print(f"[NanoBananaVisionAPI] ✓ Image {i + 1} Done — output size: {result_pil.size}")
+            print(f"[OmniVisionAPI] ✓ Image {i + 1} Done — output size: {result_pil.size}")
             results.append(pil_to_tensor(result_pil))
 
             del result_pil
@@ -400,7 +404,7 @@ class NanoBananaVisionAPI:
             out_tensor = torch.cat(results, dim=0)
             return (out_tensor, last_status_msg)
         else:
-            print("[NanoBananaVisionAPI] ⚠ No valid images generated. Returning blank tensor.")
+            print("[OmniVisionAPI] ⚠ No valid images generated. Returning blank tensor.")
             blank = torch.zeros((1, 512, 512, 3), dtype=torch.float32)
             return (blank, last_status_msg)
 

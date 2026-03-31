@@ -1,8 +1,8 @@
 """
-NB_ProfileFiller — GeeLark "Edit Instagram Profile" template filler
+Omni_ProfileFiller — GeeLark "Edit Instagram Profile" template filler
 ====================================================================
 Reads a GeeLark-exported XLSX for profile editing, fills in Biography
-(from NB_EmojiBioGen), Nickname, LinkURL, LinkTitle columns.
+(from Omni_EmojiBioGen), Nickname, LinkURL, LinkTitle columns.
 Outputs a ready-to-reimport XLSX.
 """
 
@@ -29,8 +29,8 @@ save_template = _xlsx_utils.save_template
 get_account_names = _xlsx_utils.get_account_names
 
 
-class NB_ProfileFiller:
-    CATEGORY = "NanaBanana/Tools"
+class Omni_ProfileFiller:
+    CATEGORY = "Omni/Tools"
     RETURN_TYPES = ("STRING",)
     RETURN_NAMES = ("output_file",)
     FUNCTION = "fill"
@@ -38,7 +38,7 @@ class NB_ProfileFiller:
 
     DESCRIPTION = (
         "Fills a GeeLark 'Edit Instagram Profile' XLSX template with biographies, "
-        "nicknames, usernames, link URLs and titles. Connect bios from NB_EmojiBioGen."
+        "nicknames, usernames, link URLs and titles. Connect bios from Omni_EmojiBioGen."
     )
 
     @classmethod
@@ -54,7 +54,7 @@ class NB_ProfileFiller:
                 "bios": ("STRING", {
                     "default": "",
                     "forceInput": True,
-                    "tooltip": "Bios générées par NB_EmojiBioGen (séparées par ---)"
+                    "tooltip": "Bios générées par Omni_EmojiBioGen (séparées par ---)"
                 }),
                 "nicknames": ("STRING", {
                     "default": "",
@@ -93,50 +93,50 @@ class NB_ProfileFiller:
         output_file = f"{base_name}_filled.xlsx"
 
         if total == 0:
-            print("[NB_ProfileFiller] ⚠ Template vide, rien à remplir.")
+            print("[Omni_ProfileFiller] ⚠ Template vide, rien à remplir.")
             output_path = save_template(wb, output_file)
             return (output_path,)
 
         accounts = get_account_names(rows)
-        print(f"[NB_ProfileFiller] 📝 {total} comptes détectés: {', '.join(accounts[:5])}{'...' if total > 5 else ''}")
+        print(f"[Omni_ProfileFiller] 📝 {total} comptes détectés: {', '.join(accounts[:5])}{'...' if total > 5 else ''}")
 
         # Fill Biography (col 7)
         if bios and bios.strip():
             bio_list = [b.strip() for b in bios.split("---") if b.strip()]
             if bio_list:
                 fill_column(rows, schema["biography"], bio_list, randomize=True)
-                print(f"[NB_ProfileFiller] ✓ Bios remplies ({len(bio_list)} disponibles → {total} comptes)")
+                print(f"[Omni_ProfileFiller] ✓ Bios remplies ({len(bio_list)} disponibles → {total} comptes)")
 
         # Fill Nickname (col 5)
         if nicknames and nicknames.strip():
             nick_list = [n.strip() for n in nicknames.split('\n') if n.strip()]
             if nick_list:
                 fill_column(rows, schema["nickname"], nick_list, randomize=True)
-                print(f"[NB_ProfileFiller] ✓ Nicknames remplis ({len(nick_list)} disponibles)")
+                print(f"[Omni_ProfileFiller] ✓ Nicknames remplis ({len(nick_list)} disponibles)")
 
         # Fill Username (col 6)
         if usernames and usernames.strip():
             user_list = [u.strip() for u in usernames.split('\n') if u.strip()]
             if user_list:
                 fill_column(rows, schema["username"], user_list, randomize=True)
-                print(f"[NB_ProfileFiller] ✓ Usernames remplis ({len(user_list)} disponibles)")
+                print(f"[Omni_ProfileFiller] ✓ Usernames remplis ({len(user_list)} disponibles)")
 
         # Fill LinkURL (col 8)
         if link_url and link_url.strip():
             url_list = [u.strip() for u in link_url.split('\n') if u.strip()]
             if url_list:
                 fill_column(rows, schema["link_url"], url_list, randomize=True)
-                print(f"[NB_ProfileFiller] ✓ LinkURLs remplis ({len(url_list)} disponibles)")
+                print(f"[Omni_ProfileFiller] ✓ LinkURLs remplis ({len(url_list)} disponibles)")
 
         # Fill LinkTitle (col 9)
         if link_title and link_title.strip():
             title_list = [t.strip() for t in link_title.split('\n') if t.strip()]
             if title_list:
                 fill_column(rows, schema["link_title"], title_list, randomize=True)
-                print(f"[NB_ProfileFiller] ✓ LinkTitles remplis ({len(title_list)} disponibles)")
+                print(f"[Omni_ProfileFiller] ✓ LinkTitles remplis ({len(title_list)} disponibles)")
 
         output_path = save_template(wb, output_file)
-        print(f"[NB_ProfileFiller] ✅ Fichier prêt: {output_path}")
+        print(f"[Omni_ProfileFiller] ✅ Fichier prêt: {output_path}")
         return (output_path,)
 
     @classmethod

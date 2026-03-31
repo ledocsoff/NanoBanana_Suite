@@ -2,7 +2,7 @@
 GeeLark Calendar HTML Builder
 ==============================
 Generates a standalone HTML calendar from scheduling events.
-Extracted from NB_GeeLarkScheduler for maintainability.
+Extracted from Omni_GeeLarkScheduler for maintainability.
 """
 
 import html
@@ -116,7 +116,7 @@ def build_calendar_html(events: list[dict], base_date, days_spread: int) -> str:
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>🍌 GeeLark Planning</title>
+<title>GeeLark Planning</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
@@ -361,7 +361,7 @@ def build_calendar_html(events: list[dict], base_date, days_spread: int) -> str:
 
 <div class="header">
   <div>
-    <div class="title">🍌 GeeLark Planning</div>
+    <div class="title">GeeLark Planning</div>
     <div class="subtitle">Généré le {generated_at}</div>
   </div>
   <div class="meta">
@@ -382,6 +382,6 @@ def build_calendar_html(events: list[dict], base_date, days_spread: int) -> str:
 {days_html}
 </div>
 
-<div class="footer">NanaBanana Suite · GeeLark Scheduler V4</div>
+<div class="footer">Omni Suite · GeeLark Scheduler V4</div>
 </body>
 </html>"""

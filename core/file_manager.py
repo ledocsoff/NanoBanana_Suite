@@ -31,7 +31,7 @@ def cleanup_files(file_paths: list) -> int:
                 os.remove(path)
                 deleted_count += 1
             except Exception as e:
-                print(f"[NanaBanana] ⚠️ Failed to delete {path}: {e}")
+                print(f"[Omni] ⚠️ Failed to delete {path}: {e}")
     return deleted_count
 
 def cleanup_folder_if_empty(folder: str) -> bool:
@@ -43,9 +43,9 @@ def cleanup_folder_if_empty(folder: str) -> bool:
             os.rmdir(folder)
             return True
     except Exception as e:
-        print(f"[NanaBanana] ⚠️ Failed to remove empty folder {folder}: {e}")
+        print(f"[Omni] ⚠️ Failed to remove empty folder {folder}: {e}")
     return False
 
 def get_temp_dir(base_folder: str) -> str:
-    temp_dir = os.path.join(base_folder, ".nb_temp")
+    temp_dir = os.path.join(base_folder, ".omni_temp")
     return ensure_folder(temp_dir)

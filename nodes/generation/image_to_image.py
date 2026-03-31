@@ -19,6 +19,7 @@ if _custom_nodes_dir not in sys.path:
 try:
     from shared.gemini_client import (
         ASPECT_RATIOS,
+        IMAGE_CAPABLE_MODELS,
         create_gemini_client,
         call_with_retry,
         extract_image_from_response,
@@ -32,7 +33,7 @@ except ImportError:
     )
 
 
-class NanoBananaImageToImage:
+class OmniImageToImage:
     """
     Generate or modify an image using a single reference image and a text prompt via Gemini.
     """
@@ -44,6 +45,7 @@ class NanoBananaImageToImage:
         return {
             "required": {
                 "gemini_config":      ("GEMINI_CONFIG",),
+                "model":              (IMAGE_CAPABLE_MODELS, {"default": "gemini-3-pro-image-preview"}),
                 "image":              ("IMAGE",),
                 "positive_prompt": (
                     "STRING",
@@ -68,12 +70,15 @@ class NanoBananaImageToImage:
                 "batch_size":         ("INT",   {"default": 1, "min": 1, "max": 4, "step": 1}),
                 "delay_between_calls": ("FLOAT", {"default": 3.0, "min": 0.0, "max": 15.0, "step": 0.5}),
             },
+            "optional": {
+                "skip_trigger": ("STRING", {"forceInput": True, "tooltip": "Status message to evaluate."})
+            }
         }
 
     RETURN_TYPES  = ("IMAGE", "STRING")
     RETURN_NAMES  = ("generated_image", "status_message")
     FUNCTION      = "run"
-    CATEGORY      = "NanoBanana"
+    CATEGORY      = "Omni"
     OUTPUT_NODE   = False
 
     def run(
@@ -84,22 +89,28 @@ class NanoBananaImageToImage:
         negative_prompt:    str,
         aspect_ratio:       str,
         temperature:        float,
+        model:              str = "gemini-3-pro-image-preview",
         resolution:         str = "1K",
         max_retries:        int = 5,
         batch_size:         int = 1,
         delay_between_calls: float = 3.0,
+        skip_trigger:        str = "",
     ) -> tuple[torch.Tensor, str]:
 
-        print("[NanoBananaImageToImage] Starting image generation…")
+        if skip_trigger and skip_trigger.strip().upper().startswith("FAIL"):
+            print(f"[OmniImageToImage] 🛑 Upstream failure detected. Skipping Gemini call and propagating FAIL.")
+            return (image, skip_trigger)
 
-        client, model = create_gemini_client(gemini_config)
+        print(f"[OmniImageToImage] Starting image generation with {model}…")
+
+        client = create_gemini_client(gemini_config)
 
         pil_img = tensor_to_pil(image)
         img_byte_arr = io.BytesIO()
         pil_img.save(img_byte_arr, format='PNG')
         img_bytes = img_byte_arr.getvalue()
         
-        print(f"[NanoBananaImageToImage] Input image: {pil_img.size}")
+        print(f"[OmniImageToImage] Input image: {pil_img.size}")
 
         final_prompt = positive_prompt.strip()
         if negative_prompt.strip():
@@ -126,23 +137,23 @@ class NanoBananaImageToImage:
         
         for i in range(batch_size):
             if i > 0 and delay_between_calls > 0:
-                print(f"[NanoBananaImageToImage] Waiting {delay_between_calls}s before next call...")
+                print(f"[OmniImageToImage] Waiting {delay_between_calls}s before next call...")
                 time.sleep(delay_between_calls)
-            print(f"[NanoBananaImageToImage] Generating image {i + 1}/{batch_size}...")
+            print(f"[OmniImageToImage] Generating image {i + 1}/{batch_size}...")
             response, status_msg = call_with_retry(client, model, contents, config, max_retries)
             last_status_msg = status_msg
 
             if response is None:
-                print(f"[NanoBananaImageToImage] ⚠ API Error on image {i + 1}: {status_msg}")
+                print(f"[OmniImageToImage] ⚠ API Error on image {i + 1}: {status_msg}")
                 continue
 
             result_pil = extract_image_from_response(response)
 
             if result_pil is None:
-                print(f"[NanoBananaImageToImage] ⚠ No image in response {i + 1}.")
+                print(f"[OmniImageToImage] ⚠ No image in response {i + 1}.")
                 continue
 
-            print(f"[NanoBananaImageToImage] ✓ Image {i + 1} Done — output size: {result_pil.size}")
+            print(f"[OmniImageToImage] ✓ Image {i + 1} Done — output size: {result_pil.size}")
             results.append(pil_to_tensor(result_pil))
 
             del result_pil
@@ -156,8 +167,9 @@ class NanoBananaImageToImage:
             out_tensor = torch.cat(results, dim=0)
             return (out_tensor, last_status_msg)
         else:
-            print("[NanoBananaImageToImage] ⚠ No valid images generated. Returning original image as fallback.")
-            return (image, last_status_msg)
+            print(f"[OmniImageToImage] 🚨 No valid images generated. Returning source image as fallback, emitting FAIL trigger.")
+            error_msg = f"FAIL: {last_status_msg}"
+            return (image, error_msg)
 
     @classmethod
     def IS_CHANGED(cls, **kwargs):

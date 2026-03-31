@@ -1,27 +1,27 @@
 """
-NanoBanana Gemini Config Node
+Omni Gemini Config Node
 ==============================
-Centralized provider selection for all NanoBanana generation nodes.
+Centralized provider selection for all Omni generation nodes.
 
 Outputs a GEMINI_CONFIG dict consumed by sibling nodes via their optional input.
 """
 
 from __future__ import annotations
 
-from .gemini_client import IMAGE_CAPABLE_MODELS, PROVIDERS, GCP_LOCATIONS
+from .gemini_client import PROVIDERS, GCP_LOCATIONS
 
 
-class NanoBananaGeminiConfig:
+class OmniGeminiConfig:
     """
-    Centralized Gemini provider configuration.
+    Centralized Gemini provider configuration (authentication only).
 
-    Connect the GEMINI_CONFIG output to any NanoBanana generation node
-    to override its built-in api_key / model fields.
+    Connect the GEMINI_CONFIG output to any Omni generation node
+    to provide API credentials. Each node selects its own model.
     """
 
     DESCRIPTION = (
         "Configure the Gemini provider (AI Studio or Vertex AI) "
-        "and model for all connected NanoBanana nodes."
+        "and credentials for all connected Omni nodes."
     )
 
     @classmethod
@@ -29,7 +29,6 @@ class NanoBananaGeminiConfig:
         return {
             "required": {
                 "provider": (PROVIDERS, {"default": PROVIDERS[0]}),
-                "model": (IMAGE_CAPABLE_MODELS, {"default": IMAGE_CAPABLE_MODELS[-1]}),
             },
             "optional": {
                 "api_key": (
@@ -55,25 +54,24 @@ class NanoBananaGeminiConfig:
     RETURN_TYPES = ("GEMINI_CONFIG",)
     RETURN_NAMES = ("gemini_config",)
     FUNCTION = "run"
-    CATEGORY = "NanoBanana/Config"
+    CATEGORY = "Omni/Config"
     OUTPUT_NODE = False
 
     def run(
         self,
         provider: str,
-        model: str,
         api_key: str = "",
         gcp_project_id: str = "",
         gcp_location: str = "global",
+        **kwargs
     ) -> tuple[dict]:
 
         config = {
             "provider": provider,
-            "model": model,
             "api_key": api_key,
             "gcp_project_id": gcp_project_id,
             "gcp_location": gcp_location,
         }
 
-        print(f"[NanoBananaGeminiConfig] provider={provider}, model={model}")
+        print(f"[OmniGeminiConfig] provider={provider}")
         return (config,)

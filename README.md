@@ -1,6 +1,6 @@
-# 🍌 NanoBanana Suite
+# Omni Suite
 
-NanoBanana Suite est une extension puissante et professionnelle pour **ComfyUI**, conçue pour automatiser et améliorer les workflows créatifs, de la génération d'images avancée à l'automatisation de vidéos pour les réseaux sociaux.
+Omni Suite est une extension puissante et professionnelle pour **ComfyUI**, conçue pour automatiser et améliorer les workflows créatifs, de la génération d'images avancée à l'automatisation de vidéos pour les réseaux sociaux.
 
 Ce dossier est prêt pour la production (Public-Ready). Les clés API sont traitées de manière sécurisée et les chemins sont multiplateformes.
 
@@ -23,7 +23,7 @@ Ce dossier est prêt pour la production (Public-Ready). Les clés API sont trait
 Clonez ou copiez ce dossier directement dans `ComfyUI/custom_nodes/`.
 ```bash
 cd ComfyUI/custom_nodes
-git clone <url-du-repo> NanoBanana_Suite
+git clone <url-du-repo> Omni_Suite
 ```
 
 ### Dépendances Python
@@ -43,18 +43,18 @@ pip install -r requirements.txt
 Ces nœuds exploitent la puissance de **Google Gemini 1.5/2.0** pour diriger la génération d'images avec une précision "Directeur Artistique".
 
 ### Nœud de Configuration partagé
-* `🍌 Gemini Config` : Nœud central pour entrer votre clé API Google de façon sécurisée. À relier aux autres nœuds Gemini.
+* `Gemini Config` : Nœud central pour entrer votre clé API Google de façon sécurisée. À relier aux autres nœuds Gemini.
 
 ### Nœuds Directeurs (Direction)
-* `🍌 IA Director` : Agrège des consignes complexes (Sujet, Style, Action, Caméra) pour pondre un prompt parfait.
-* `🍌 Matrix Builder` : Conçu pour tester un prompt avec plusieurs variables sous forme de grille mathématique expérimentale.
-* `🍌 Vision API` : Analyse et décrit le contenu visuel d'une ou plusieurs images passées en entrée.
-* `🍌 Variant Director` & `🍌 Variant API` : Génèrent des variations contextuelles fluides d'un prompt initial (ex: pour de la vidéo ou des keyframes).
-* `🍌 Chooser` : Utilisé pour faire un tri ou sélectionner des éléments précis suite aux générations de Matrix ou Variants.
+* `IA Director` : Agrège des consignes complexes (Sujet, Style, Action, Caméra) pour pondre un prompt parfait.
+* `Matrix Builder` : Conçu pour tester un prompt avec plusieurs variables sous forme de grille mathématique expérimentale.
+* `Vision API` : Analyse et décrit le contenu visuel d'une ou plusieurs images passées en entrée.
+* `Variant Director` & `Variant API` : Génèrent des variations contextuelles fluides d'un prompt initial (ex: pour de la vidéo ou des keyframes).
+* `Chooser` : Utilisé pour faire un tri ou sélectionner des éléments précis suite aux générations de Matrix ou Variants.
 
 ### Nœuds de Génération Native
-* `🍌 Prompt to Image` : Connexion directe Text-to-Image (dépendant des modèles supportés).
-* `🍌 Image to Image` : Modification d'images existantes.
+* `Prompt to Image` : Connexion directe Text-to-Image (dépendant des modèles supportés).
+* `Image to Image` : Modification d'images existantes.
 
 ---
 
@@ -62,13 +62,13 @@ Ces nœuds exploitent la puissance de **Google Gemini 1.5/2.0** pour diriger la 
 
 Des outils ciblés pour préserver l'identité et exporter proprement le résultat.
 
-* `🍌 Swap` : Remplace ou combine des visages/identités sur une image cible tout en respectant l'éclairage et la direction du regard (nécessite les modèles Reactor/FaceID sous-jacents).
+* `Swap` : Remplace ou combine des visages/identités sur une image cible tout en respectant l'éclairage et la direction du regard (nécessite les modèles Reactor/FaceID sous-jacents).
 
-* `🍌 Quality Gate` : **Validation intelligente des face swaps via Gemini Vision.** Le nœud analyse le résultat du swap selon 3 critères (identité, préservation de la scène, artefacts) et retourne un verdict binaire PASS/FAIL. En cas d'échec, il **re-génère automatiquement un nouveau swap** (retry interne) jusqu'à `max_retries` tentatives (défaut: 2). Si tous les retries échouent, il retourne un tensor vide que Kling MC détecte automatiquement pour skipper l'appel API et déplacer la vidéo dans le dossier `/failed`.
+* `Quality Gate` : **Validation intelligente des face swaps via Gemini Vision.** Le nœud analyse le résultat du swap selon 3 critères (identité, préservation de la scène, artefacts) et retourne un verdict binaire PASS/FAIL. En cas d'échec, il **re-génère automatiquement un nouveau swap** (retry interne) jusqu'à `max_retries` tentatives (défaut: 2). Si tous les retries échouent, il retourne un tensor vide que Kling MC détecte automatiquement pour skipper l'appel API et déplacer la vidéo dans le dossier `/failed`.
 
-* `🍌 Preview` : Permet de prévisualiser l'image en direct dans le flow, avant la sauvegarde, sans l'écrire définitivement.
+* `Preview` : Permet de prévisualiser l'image en direct dans le flow, avant la sauvegarde, sans l'écrire définitivement.
 
-* `🍌 Clean Save` : **(Important)** Sauvegarde l'image finale sur votre disque dur (dans le dossier natif de sortie de ComfyUI), en *supprimant intégralement toutes les balises EXIF et métadonnées invisibles* injectées par ComfyUI. Idéal pour partager des images pures sans révéler le workflow.
+* `Clean Save` : **(Important)** Sauvegarde l'image finale sur votre disque dur (dans le dossier natif de sortie de ComfyUI), en *supprimant intégralement toutes les balises EXIF et métadonnées invisibles* injectées par ComfyUI. Idéal pour partager des images pures sans révéler le workflow.
 
 ---
 
@@ -76,12 +76,12 @@ Des outils ciblés pour préserver l'identité et exporter proprement le résult
 
 Ces nœuds font le pont direct entre ComfyUI et les API de génération vidéo externes comme **Kling AI** (via PiAPI).
 
-* `🍌 PiAPI Kling Auth` : Nœud d'authentification pour se connecter à PiAPI de manière sécurisée.
-* `🍌 PiAPI Kling Motion Control` : Permet d'envoyer vos images générées dans ComfyUI à l'IA vidéo Kling pour leur donner vie, avec un contrôle avancé du mouvement (Motion Brush, Camera Path, etc).
+* `PiAPI Kling Auth` : Nœud d'authentification pour se connecter à PiAPI de manière sécurisée.
+* `PiAPI Kling Motion Control` : Permet d'envoyer vos images générées dans ComfyUI à l'IA vidéo Kling pour leur donner vie, avec un contrôle avancé du mouvement (Motion Brush, Camera Path, etc).
 
-* `🍌 Batch Video Queue` : Gère une file d'attente pour traiter, charger ou lister plusieurs vidéos en lot dans le workflow. Supporte le **mode récursif** : si activé, il scanne les sous-dossiers et préserve la structure dans `output/`, `done/` et `failed/`. La détection de vidéos déjà traitées utilise le chemin relatif complet (pas seulement le nom de fichier), ce qui évite les collisions entre sous-dossiers.
-* `🍌 Video First Frame` : Extrait instantanément la première frame (image 1) d'une vidéo pour s'en servir de référence Image-to-Video.
-* `🍌 Export for Kling` : Formatte la taille et prépare les métadonnées optimales de l'image pour l'API Kling.
+* `Batch Video Queue` : Gère une file d'attente pour traiter, charger ou lister plusieurs vidéos en lot dans le workflow. Supporte le **mode récursif** : si activé, il scanne les sous-dossiers et préserve la structure dans `output/`, `done/` et `failed/`. La détection de vidéos déjà traitées utilise le chemin relatif complet (pas seulement le nom de fichier), ce qui évite les collisions entre sous-dossiers.
+* `Video First Frame` : Extrait instantanément la première frame (image 1) d'une vidéo pour s'en servir de référence Image-to-Video.
+* `Export for Kling` : Formatte la taille et prépare les métadonnées optimales de l'image pour l'API Kling.
 
 ---
 
@@ -105,7 +105,7 @@ Le bloc Soir est un **bloc overnight** : il commence à 22h et finit à 04h du m
 
 ---
 
-### 🍌 Video Spoofer
+### Video Spoofer
 
 **But** : Rendre chaque copie d'une vidéo techniquement unique pour éviter la détection de doublons par les algorithmes Instagram/TikTok.
 
@@ -151,7 +151,7 @@ mes_videos/
 
 ---
 
-### 🍌 GeeLark Scheduler
+### GeeLark Scheduler
 
 **But** : Remplir automatiquement les fichiers Excel de planification GeeLark avec des horaires aléatoires répartis intelligemment sur plusieurs jours.
 
@@ -206,7 +206,7 @@ Le fichier `_calendar.html` généré est un dashboard dark mode responsive qui 
 
 ---
 
-### 🍌 Static Captioner
+### Static Captioner
 
 **But** : Générer instantanément des centaines de captions textuelles génériques sans aucun appel API.
 
@@ -226,7 +226,7 @@ Le fichier `_calendar.html` généré est un dashboard dark mode responsive qui 
 
 ---
 
-### 🍌 Emoji Bio Generator
+### Emoji Bio Generator
 
 **But** : Générer automatiquement des bios Instagram uniques composées d'émojis et de mots courts pour la personnalisation de masse des profils.
 
@@ -248,7 +248,7 @@ Le fichier `_calendar.html` généré est un dashboard dark mode responsive qui 
 
 ---
 
-### 🍌 Profile Filler
+### Profile Filler
 
 **But** : Remplir en masse les fichiers Excel GeeLark "Edit Profile" pour modifier les profils Instagram de nombreux comptes en une seule opération.
 
@@ -271,7 +271,7 @@ Le fichier `_calendar.html` généré est un dashboard dark mode responsive qui 
 
 ---
 
-### 🍌 Account Warmup Filler
+### Account Warmup Filler
 
 **But** : Remplir le template GeeLark "Instagram AI account warmup" pour automatiser le réchauffement séquentiel des comptes neufs.
 
@@ -347,18 +347,18 @@ Si l'espacement calculé est inférieur à 15 minutes (trop de comptes pour le b
 #### Workflow 4 : Pipeline complet Face Swap → Kling MC
 ```
   ┌──────────────────┐     ┌──────────────┐     ┌──────────────┐
-  │ Batch Video Queue │ ──→ │ Video 1st    │ ──→ │ 🍌 Swap      │
+  │ Batch Video Queue │ ──→ │ Video 1st    │ ──→ │ Swap      │
   │  (recursive: on)  │     │ Frame        │     └──────┬───────┘
   └──────┬───────────┘     └──────────────┘            │
          │                                              │
          │ relative_subfolder                ┌──────────▼───────────┐
-         │                                   │ 🍌 Quality Gate       │
+         │                                   │ Quality Gate       │
          │                                   │ (PASS/FAIL + retry)   │
          │                                   └──────────┬───────────┘
          │                                              │ image (ou vide)
          └──────────────────────────────────────────────▼
                                               ┌──────────────────────┐
-                                              │ 🍌 PiAPI Kling MC     │
+                                              │ PiAPI Kling MC     │
                                               │ ← relative_subfolder  │
                                               └──────────┬───────────┘
                                                          │
@@ -386,7 +386,7 @@ Si l'espacement calculé est inférieur à 15 minutes (trop de comptes pour le b
 ### Structure des fichiers
 
 ```
-NanoBanana_Suite/
+Omni_Suite/
 ├── __init__.py              # Point d'entrée ComfyUI (24 nœuds enregistrés)
 ├── core/                    # Utilitaires bas niveau
 │   ├── image_utils.py       # tensor↔PIL, base64
