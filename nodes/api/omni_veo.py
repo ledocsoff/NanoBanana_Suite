@@ -129,10 +129,14 @@ class Omni_Veo:
                 number_of_videos=1,
             )
             
-            if negative_prompt and negative_prompt.strip():
+            if negative_prompt and negative_prompt.strip() and "lite" not in model.lower() and "fast" not in model.lower():
                 config.negative_prompt = negative_prompt.strip()
 
             print(f"[Omni_Veo] 🚀 Submitting to {model}...")
+            print(f"[Omni_Veo] 📝 Prompt: {final_prompt}")
+            if hasattr(config, "negative_prompt") and config.negative_prompt:
+                print(f"[Omni_Veo] 🚫 Neg. Prompt: {config.negative_prompt}")
+                
             operation = client.models.generate_videos(
                 model=model,
                 prompt=final_prompt,
@@ -161,7 +165,9 @@ class Omni_Veo:
                 raise Exception(f"Operation failed: {operation.error}")
 
             # 8. Téléchargement de la vidéo
-            if hasattr(operation.result, "generated_videos") and len(operation.result.generated_videos) > 0:
+            if hasattr(operation, "result") and operation.result and \
+               hasattr(operation.result, "generated_videos") and operation.result.generated_videos:
+                
                 video_obj = operation.result.generated_videos[0]
                 
                 if hasattr(video_obj, "video") and hasattr(video_obj.video, "uri"):
