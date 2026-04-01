@@ -2,9 +2,9 @@ import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 
 app.registerExtension({
-    name: "nanobanana.chooser",
+    name: "omni.chooser",
     setup() {
-        api.addEventListener("nanobanana.chooser.display", (event) => {
+        api.addEventListener("omni.chooser.display", (event) => {
             const data = event.detail;
             const nodeId = data.node_id;
             const images = data.images; // array of {filename, type, subfolder}
@@ -50,7 +50,7 @@ app.registerExtension({
             header.style.paddingBottom = "10px";
 
             const title = document.createElement("h2");
-            title.textContent = "🍌 Sélection d'Image(s) - " + mode;
+            title.textContent = "🎯 Sélection d'Image(s) - " + mode;
             title.style.margin = "0";
             title.style.fontSize = "1.5rem";
             header.appendChild(title);
@@ -187,7 +187,7 @@ app.registerExtension({
                 clearInterval(timer);
                 
                 try {
-                    await fetch("/nanobanana/chooser/select", {
+                    await fetch("/omni/chooser/select", {
                         method: "POST",
                         body: JSON.stringify({
                             node_id: nodeId,
@@ -198,7 +198,7 @@ app.registerExtension({
                         }
                     });
                 } catch(e) {
-                    console.error("[NanoBanana] Error sending selection", e);
+                    console.error("[Omni] Error sending selection", e);
                 }
                 
                 closeDialog();

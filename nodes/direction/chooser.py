@@ -27,7 +27,7 @@ _state_lock = threading.Lock()
 _pending_selections: Dict[str, Dict[str, Any]] = {}
 
 
-@PromptServer.instance.routes.post("/nanobanana/chooser/select")
+@PromptServer.instance.routes.post("/omni/chooser/select")
 async def chooser_select(request):
     """API Endpoint: Receives the specific indices the user selected via UI."""
     data = await request.json()
@@ -113,7 +113,7 @@ class OmniChooser:
         
         for i in range(batch_size):
             img_pil = _tensor_to_pil(images[i])
-            filename = f"nanobanana_chooser_{session_id}_{i}.png"
+            filename = f"omni_chooser_{session_id}_{i}.png"
             filepath = os.path.join(temp_dir, filename)
             
             # Fast minimal compression for temp preview
@@ -135,7 +135,7 @@ class OmniChooser:
             }
             
         # 4. Notify frontend to mount the selection UI
-        PromptServer.instance.send_sync("nanobanana.chooser.display", {
+        PromptServer.instance.send_sync("omni.chooser.display", {
             "node_id": unique_id,
             "images": ui_images,
             "mode": mode,
