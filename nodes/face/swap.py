@@ -79,7 +79,7 @@ class OmniSwap:
                 "resolution":   (["1K", "2K", "4K"], {"default": "1K"}),
                 "max_retries":  ("INT",   {"default": 5, "min": 1, "max": 15, "step": 1}),
                 "batch_size":   ("INT",   {"default": 1, "min": 1, "max": 4, "step": 1}),
-                "delay_between_calls": ("FLOAT", {"default": 3.0, "min": 0.0, "max": 15.0, "step": 0.5}),
+                "delay_between_calls": ("FLOAT", {"default": 3.0, "min": 0.0, "max": 900.0, "step": 0.5}),
             },
             "optional": {
                 "skip_trigger": ("STRING", {"forceInput": True, "tooltip": "Status message to evaluate."})
