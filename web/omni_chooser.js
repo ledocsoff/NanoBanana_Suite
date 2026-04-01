@@ -204,7 +204,59 @@ app.registerExtension({
                 closeDialog();
             };
             
-            dialog.appendChild(submitBtn);
+            const buttonContainer = document.createElement("div");
+            buttonContainer.style.display = "flex";
+            buttonContainer.style.justifyContent = "center";
+            buttonContainer.style.gap = "20px";
+            buttonContainer.style.width = "100%";
+            buttonContainer.style.marginTop = "20px";
+            
+            const cancelBtn = document.createElement("button");
+            cancelBtn.textContent = "Aucune photo adaptée (Annuler)";
+            cancelBtn.style.padding = "15px 20px";
+            cancelBtn.style.backgroundColor = "#f44336";
+            cancelBtn.style.color = "white";
+            cancelBtn.style.border = "none";
+            cancelBtn.style.cursor = "pointer";
+            cancelBtn.style.borderRadius = "6px";
+            cancelBtn.style.fontSize = "1.2rem";
+            cancelBtn.style.fontWeight = "bold";
+            cancelBtn.style.transition = "background-color 0.2s";
+            
+            cancelBtn.onmouseover = () => cancelBtn.style.backgroundColor = "#d32f2f";
+            cancelBtn.onmouseout = () => cancelBtn.style.backgroundColor = "#f44336";
+            
+            submitBtn.style.marginTop = "0px";
+            
+            cancelBtn.onclick = async () => {
+                cancelBtn.disabled = true;
+                submitBtn.disabled = true;
+                cancelBtn.textContent = "Annulation...";
+                cancelBtn.style.backgroundColor = "#888";
+                clearInterval(timer);
+                
+                try {
+                    await fetch("/omni/chooser/select", {
+                        method: "POST",
+                        body: JSON.stringify({
+                            node_id: nodeId,
+                            indices: [],
+                            cancel: true
+                        }),
+                        headers: {
+                            'Content-Type': 'application/json'
+                        }
+                    });
+                } catch(e) {
+                    console.error("[Omni] Error sending selection", e);
+                }
+                
+                closeDialog();
+            };
+
+            buttonContainer.appendChild(cancelBtn);
+            buttonContainer.appendChild(submitBtn);
+            dialog.appendChild(buttonContainer);
             document.body.appendChild(dialog);
         });
     }

@@ -33,10 +33,12 @@ async def chooser_select(request):
     data = await request.json()
     node_id = data.get("node_id")
     indices = data.get("indices", [])
+    cancel = data.get("cancel", False)
     
     with _state_lock:
         if node_id in _pending_selections:
             _pending_selections[node_id]["indices"] = indices
+            _pending_selections[node_id]["cancel"] = cancel
             _pending_selections[node_id]["event"].set()
             return web.json_response({"status": "ok"})
             
@@ -132,6 +134,7 @@ class OmniChooser:
             _pending_selections[unique_id] = {
                 "event": event,
                 "indices": [],
+                "cancel": False,
             }
             
         # 4. Notify frontend to mount the selection UI
@@ -162,7 +165,9 @@ class OmniChooser:
                 
         # 6. Safety teardown
         with _state_lock:
-            selected_indices = _pending_selections.get(unique_id, {}).get("indices", [])
+            selection_data = _pending_selections.get(unique_id, {})
+            selected_indices = selection_data.get("indices", [])
+            is_cancelled = selection_data.get("cancel", False)
             if unique_id in _pending_selections:
                 del _pending_selections[unique_id]
             
@@ -177,6 +182,10 @@ class OmniChooser:
         # Exception if user clicked "Cancel Queue" in ComfyUI
         if interrupted_by_user:
             raise InterruptedError("[OmniChooser] Workflow cancelled by user.")
+            
+        if is_cancelled:
+            print(f"[OmniChooser] ❌ User manually cancelled (No suitable photo).")
+            return (images, batch_size, "FAIL: No suitable photo selected")
             
         # Handle strict Timeout
         if not selected_indices:
