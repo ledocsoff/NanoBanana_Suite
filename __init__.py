@@ -18,7 +18,7 @@ from .nodes.direction.chooser import OmniChooser
 
 # --- Face ---
 from .nodes.face.swap import OmniSwap
-from .nodes.face.quality_gate import OmniQualityGate
+from .nodes.face.quality_gate import OmniQualityGate, OmniIdentityGate
 
 # --- Post-process ---
 from .nodes.postprocess.output import OmniPreview, OmniCleanSave
@@ -80,6 +80,7 @@ NODE_CLASS_MAPPINGS = {
     # Face
     "OmniSwap": OmniSwap,
     "OmniQualityGate": OmniQualityGate,
+    "OmniIdentityGate": OmniIdentityGate,
     
     # Post-process
     "OmniPreview": OmniPreview,
@@ -127,6 +128,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     # Face
     "OmniSwap": "Swap",
     "OmniQualityGate": "Quality Gate",
+    "OmniIdentityGate": "Identity Gate",
     
     # Post-process
     "OmniPreview": "Preview",
