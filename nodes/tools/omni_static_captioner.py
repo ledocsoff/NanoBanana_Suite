@@ -13,31 +13,6 @@ from __future__ import annotations
 import random
 
 
-# Internal caption pools
-_REEL_CAPTIONS = [
-    "and now?", "at least i tried", "be honest", "can you explain?",
-    "casual.", "catching the vibe?", "couldn't resist", "current mood",
-    "did what had to be done", "didn't even try", "do you like it?", "don't ask.",
-    "effortless", "feeling myself today", "good mood today", "how was that?",
-    "i like this trend", "i tried ok", "i want this..", "i'm in shock..",
-    "i'm lucky?", "i'm your type?", "in my element", "just for fun",
-    "living for this", "looking at what?", "making it look easy", "not your average",
-    "obsessed.", "oh?", "ok?", "oops.", "rate this 1-10", "simple girl",
-    "wait for it..", "what am i doing", "what's going on?", "why not.", "why not?"
-]
-
-_CAROUSEL_CAPTIONS = [
-    "photo dump", "core memory unlocked", "dump", "lately",
-    "a series of events", "in order", "swipe for a surprise",
-    "life lately", "random but here", "highlights", "some moments",
-    "mini dump", "kept these for you", "weekend dump", "camera roll cleanup",
-    "small things", "snap snap", "some favorites", "life in frames",
-    "memories i'm keeping", "had to share", "unfiltered", "a few things",
-    "slide through", "in no particular order", "all the vibes",
-    "take your pick", "some stuff", "brain dump", "just a few",
-]
-
-
 class Omni_StaticCaptioner:
     CATEGORY = "Omni/Tools"
     RETURN_TYPES = ("STRING",)
@@ -46,7 +21,7 @@ class Omni_StaticCaptioner:
     OUTPUT_NODE = False
 
     DESCRIPTION = (
-        "Generates lowercase captions from internal reel/carousel pools. "
+        "Generates lowercase captions from user defined pools. "
         "Hashtags appended randomly based on probability."
     )
 
@@ -54,14 +29,15 @@ class Omni_StaticCaptioner:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "content_type": (["reel", "carousel"], {
-                    "default": "reel",
-                    "tooltip": "reel = captions courtes Gen Z. carousel = captions 'photo dump' pour swipe."
+                "captions_pool": ("STRING", {
+                    "default": "casual.\ncurrent mood\ncatching the vibe?\nrate this 1-10",
+                    "multiline": True,
+                    "tooltip": "Une caption par ligne."
                 }),
                 "hashtag_pool": ("STRING", {
                     "default": "fyp, model, reels, explore, viral, explorepage, beauty",
-                    "multiline": False,
-                    "tooltip": "Hashtags permis, séparés par des virgules."
+                    "multiline": True,
+                    "tooltip": "Hashtags permis, séparés par des virgules ou sauts de ligne."
                 }),
                 "hashtag_probability": ("FLOAT", {
                     "default": 0.30,
@@ -73,18 +49,18 @@ class Omni_StaticCaptioner:
             }
         }
 
-    def generate(self, content_type: str, hashtag_pool: str, hashtag_probability: float) -> tuple[str]:
+    def generate(self, captions_pool: str, hashtag_pool: str, hashtag_probability: float) -> tuple[str]:
         count = 500
 
-        raw_lines = list(_REEL_CAPTIONS if content_type == "reel" else _CAROUSEL_CAPTIONS)
+        raw_lines = [line.strip() for line in captions_pool.split('\n') if line.strip()]
 
         if not raw_lines:
             raw_lines = ["mood"]
 
-        print(f"[Omni_StaticCaptioner] Generating {count} captions (source={content_type}, pool={len(raw_lines)})...")
+        print(f"[Omni_StaticCaptioner] Generating {count} captions (pool={len(raw_lines)})...")
 
-        # Parse hashtags
-        raw_tags = [tag.strip().strip('#') for tag in hashtag_pool.split(',') if tag.strip()]
+        # Parse hashtags (comma or newline separated)
+        raw_tags = [tag.strip().strip('#') for tag in hashtag_pool.replace('\n', ',').split(',') if tag.strip()]
         if not raw_tags:
             raw_tags = ["fyp"]
 

@@ -21,14 +21,10 @@ _xlsx_utils = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_xlsx_utils)
 
 GEELARK_SCHEMAS = _xlsx_utils.GEELARK_SCHEMAS
-TIME_BLOCKS = _xlsx_utils.TIME_BLOCKS
-TIME_BLOCK_CHOICES = _xlsx_utils.TIME_BLOCK_CHOICES
-BLOCK_KEYS = _xlsx_utils.BLOCK_KEYS
-merge_time_blocks = _xlsx_utils.merge_time_blocks
-merged_duration_minutes = _xlsx_utils.merged_duration_minutes
+range_duration_minutes = _xlsx_utils.range_duration_minutes
+validate_schedule_capacity = _xlsx_utils.validate_schedule_capacity
 format_paris_time = _xlsx_utils.format_paris_time
 MIN_SEQUENTIAL_DELAY = _xlsx_utils.MIN_SEQUENTIAL_DELAY
-block_duration_minutes = _xlsx_utils.block_duration_minutes
 load_template = _xlsx_utils.load_template
 save_template = _xlsx_utils.save_template
 get_account_names = _xlsx_utils.get_account_names
@@ -66,17 +62,13 @@ class Omni_AccountWarmupFiller:
                     "default": "",
                     "tooltip": "Fichier modèle exporté de GeeLark (Instagram AI account warmup)"
                 }),
-                "block_matin": ("BOOLEAN", {
-                    "default": True,
-                    "tooltip": "☀️ Matin (04h-16h) — Warmup"
+                "start_hour": ("INT", {
+                    "default": 8, "min": 0, "max": 23, "step": 1,
+                    "tooltip": "Heure de début (Paris). Ex: 8 = 08h00"
                 }),
-                "block_apresmidi": ("BOOLEAN", {
-                    "default": True,
-                    "tooltip": "🌆 Après-midi (16h-22h) — Maintenance"
-                }),
-                "block_soir": ("BOOLEAN", {
-                    "default": False,
-                    "tooltip": "🌙 Soir (22h-04h) — Prime Time US"
+                "end_hour": ("INT", {
+                    "default": 20, "min": 0, "max": 23, "step": 1,
+                    "tooltip": "Heure de fin (Paris). Ex: 20 = 20h00. Si < début → overnight"
                 }),
                 "keywords_pool": ("STRING", {
                     "default": "egirl makeup\ngym girl routine\ngrwm routine\nsoft girl aesthetic\noutfit check\nstorytime makeup\nnight routine skincare\nshein haul aesthetic\nzara haul",
@@ -138,22 +130,14 @@ class Omni_AccountWarmupFiller:
             hour=merged_ranges[0]["start_hour"], minute=random.randint(0, 10)
         )
 
-    def fill_warmup(self, template_file, block_matin, block_apresmidi, block_soir,
+    def fill_warmup(self, template_file, start_hour, end_hour,
                     keywords_pool, min_scroll_videos, max_scroll_videos, start_days_from_now):
         wb, rows = load_template(template_file)
         schema = GEELARK_SCHEMAS.get("account_warmup")
 
-        # Build merged time ranges from active toggles
-        active_keys = []
-        if block_matin:
-            active_keys.append(BLOCK_KEYS["block_matin"])
-        if block_apresmidi:
-            active_keys.append(BLOCK_KEYS["block_apresmidi"])
-        if block_soir:
-            active_keys.append(BLOCK_KEYS["block_soir"])
-
-        merged_ranges = merge_time_blocks(active_keys)
-        total_block_dur = merged_duration_minutes(merged_ranges)
+        # Single time range — overnight handled natively
+        merged_ranges = [{"start_hour": start_hour, "end_hour": end_hour}]
+        total_block_dur = range_duration_minutes(start_hour, end_hour)
 
         # Auto-generate output filename
         base_name = os.path.splitext(template_file.strip().strip("'\""))[0]
@@ -175,17 +159,16 @@ class Omni_AccountWarmupFiller:
             keywords_list = ["aesthetic"]
 
         # Tight packing: use minimum delay + small anti-pattern jitter
-        # Goal: finish warmup ASAP to free GeeLark for other tasks
         omni_accounts = len(rows)
         base_delay = MIN_SEQUENTIAL_DELAY  # 15 min minimum between accounts
         max_jitter = 8  # 0-8 min random bonus to break pattern
 
         estimated_total = omni_accounts * (base_delay + max_jitter // 2)
 
-        # Build start datetime — first merged range start hour
+        # Build start datetime — start_hour
         base_date = datetime.now().date() + timedelta(days=start_days_from_now)
         current_dt = datetime.combine(base_date, datetime.min.time()).replace(
-            hour=merged_ranges[0]["start_hour"], minute=random.randint(0, 10)
+            hour=start_hour, minute=random.randint(0, 10)
         )
 
         # Protection: Prevent scheduling in the past if running for "today"
@@ -193,8 +176,9 @@ class Omni_AccountWarmupFiller:
         if current_dt < safe_now:
             current_dt = safe_now
 
-        block_labels = [k for k, v in BLOCK_KEYS.items() if v in active_keys]
-        print(f"[Omni_AccountWarmupFiller] ⏳ {omni_accounts} comptes | Blocs: {', '.join(block_labels)} ({total_block_dur} min dispo)")
+        is_overnight = end_hour < start_hour or start_hour == end_hour
+        range_label = f"{start_hour}h→{end_hour}h" + (" (overnight)" if is_overnight else "")
+        print(f"[Omni_AccountWarmupFiller] ⏳ {omni_accounts} comptes | Fenêtre: {range_label} ({total_block_dur} min dispo)")
         print(f"[Omni_AccountWarmupFiller] 📐 Packing serré: {base_delay}-{base_delay + max_jitter} min/compte (~{estimated_total} min total estimé)")
 
         # Collect events for calendar + build color map
@@ -204,6 +188,10 @@ class Omni_AccountWarmupFiller:
 
         # Shuffler l'ordre des comptes pour casser le pattern séquentiel (anti-fingerprint)
         random.shuffle(rows)
+        
+        # Burst control variables for organic pacing
+        burst_size = random.randint(3, 7)
+        current_burst_count = 0
 
         for i, row in enumerate(rows):
             # If current time is outside all active ranges, jump to next range start
@@ -232,8 +220,17 @@ class Omni_AccountWarmupFiller:
 
             # Advance time for the NEXT account
             if i < len(rows) - 1:
-                # Tight packing delay: base minimum + tiny jitter
-                delay = base_delay + random.randint(0, max_jitter)
+                current_burst_count += 1
+                if current_burst_count >= burst_size:
+                    # Organic silence gap between bursts
+                    delay = random.randint(90, 180)  # 1.5 to 3 hours pause
+                    print(f"[Omni_AccountWarmupFiller] 🌊 Fin de vague : Pause organique de {delay} min avant le prochain flot.")
+                    burst_size = random.randint(3, 7)
+                    current_burst_count = 0
+                else:
+                    # Tight packing delay within a burst
+                    delay = base_delay + random.randint(0, max_jitter)
+                
                 current_dt += timedelta(minutes=delay)
 
         output_path = save_template(wb, output_file)

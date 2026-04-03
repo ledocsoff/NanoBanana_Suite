@@ -10,6 +10,7 @@ Uses direct Paris hours — no timezone conversion needed.
 No more "from scratch" mode. This node ONLY modifies existing templates.
 """
 
+import json
 import random
 import os
 import importlib.util
@@ -29,11 +30,8 @@ _spec2 = importlib.util.spec_from_file_location("calendar_html", os.path.join(_s
 _calendar_html = importlib.util.module_from_spec(_spec2)
 _spec2.loader.exec_module(_calendar_html)
 
-TIME_BLOCKS = _xlsx_utils.TIME_BLOCKS
-TIME_BLOCK_CHOICES = _xlsx_utils.TIME_BLOCK_CHOICES
-BLOCK_KEYS = _xlsx_utils.BLOCK_KEYS
-merge_time_blocks = _xlsx_utils.merge_time_blocks
-merged_duration_minutes = _xlsx_utils.merged_duration_minutes
+range_duration_minutes = _xlsx_utils.range_duration_minutes
+validate_schedule_capacity = _xlsx_utils.validate_schedule_capacity
 format_paris_time = _xlsx_utils.format_paris_time
 load_template = _xlsx_utils.load_template
 build_calendar_html = _calendar_html.build_calendar_html
@@ -43,7 +41,7 @@ build_color_map = _calendar_html.build_color_map
 class Omni_GeeLarkScheduler:
     CATEGORY = "Omni/Tools"
     RETURN_TYPES = ("STRING", "STRING",)
-    RETURN_NAMES = ("output_file", "calendar_html",)
+    RETURN_NAMES = ("output_file", "events_json",)
     FUNCTION = "schedule"
     OUTPUT_NODE = True
 
@@ -61,17 +59,13 @@ class Omni_GeeLarkScheduler:
                     "default": "",
                     "tooltip": "Chemin du fichier .xlsx exporté depuis GeeLark. Le type (Reels/Profile) est auto-détecté."
                 }),
-                "block_matin": ("BOOLEAN", {
-                    "default": True,
-                    "tooltip": "☀️ Matin (04h-16h) — Warmup"
+                "start_hour": ("INT", {
+                    "default": 20, "min": 0, "max": 23, "step": 1,
+                    "tooltip": "Heure de début (Paris). Ex: 20 = 20h00"
                 }),
-                "block_apresmidi": ("BOOLEAN", {
-                    "default": True,
-                    "tooltip": "🌆 Après-midi (16h-22h) — Maintenance"
-                }),
-                "block_soir": ("BOOLEAN", {
-                    "default": False,
-                    "tooltip": "🌙 Soir (22h-04h) — Prime Time US"
+                "end_hour": ("INT", {
+                    "default": 4, "min": 0, "max": 23, "step": 1,
+                    "tooltip": "Heure de fin (Paris). Ex: 4 = 04h00. Si < début → overnight"
                 }),
                 "start_days_from_now": ("INT", {
                     "default": 1,
@@ -124,7 +118,7 @@ class Omni_GeeLarkScheduler:
         # Default: it's a post template (caption in col5)
         return "post_video/carousel"
 
-    def schedule(self, template_file, block_matin, block_apresmidi, block_soir,
+    def schedule(self, template_file, start_hour, end_hour,
                  start_days_from_now, captions="", days_spread=7, min_gap_minutes=30, max_simultaneous=3):
         template_file = template_file.strip().strip("'\"") if template_file else ""
 
@@ -134,17 +128,9 @@ class Omni_GeeLarkScheduler:
         if not template_file.lower().endswith('.xlsx'):
             raise Exception(f"Le fichier template doit être un fichier .xlsx. Chemin fourni: '{template_file}'")
 
-        # Build merged time ranges from active toggles
-        active_keys = []
-        if block_matin:
-            active_keys.append(BLOCK_KEYS["block_matin"])
-        if block_apresmidi:
-            active_keys.append(BLOCK_KEYS["block_apresmidi"])
-        if block_soir:
-            active_keys.append(BLOCK_KEYS["block_soir"])
-
-        merged_ranges = merge_time_blocks(active_keys)
-        total_minutes = merged_duration_minutes(merged_ranges)
+        # Single time range — overnight handled natively when end < start
+        merged_ranges = [{"start_hour": start_hour, "end_hour": end_hour}]
+        total_minutes = range_duration_minutes(start_hour, end_hour)
 
         # Auto-detect template type
         template_type = self._detect_template_type(template_file)
@@ -158,16 +144,19 @@ class Omni_GeeLarkScheduler:
 
         base_date = datetime.now().date() + timedelta(days=start_days_from_now)
         
-        # OVERNIGHT FIX: If generating past midnight (00:00 - 04:00) for "today", 
+        is_overnight = end_hour < start_hour or start_hour == end_hour
+        
+        # OVERNIGHT FIX: If generating past midnight (00:00 - <end_hour>) for "today", 
         # conceptually refer to "yesterday's" overnight block to fill the current night.
-        if start_days_from_now == 0 and datetime.now().hour < 4:
+        # MUST ONLY APPLY IF THE CURRENT RANGE IS ACTUALLY AN OVERNIGHT RANGE!
+        if start_days_from_now == 0 and is_overnight and datetime.now().hour < end_hour:
             base_date -= timedelta(days=1)
             print("[Omni_GeeLarkScheduler] 🌙 Détection post-minuit : alignement de la planification sur la nuit en cours.")
 
         caption_list = self._parse_captions(captions)
 
-        block_labels = [k for k, v in BLOCK_KEYS.items() if v in active_keys]
-        print(f"[Omni_GeeLarkScheduler] 📅 Blocs actifs: {', '.join(block_labels)} ({total_minutes} min dispo/jour)")
+        range_label = f"{start_hour}h→{end_hour}h" + (" (overnight)" if is_overnight else "")
+        print(f"[Omni_GeeLarkScheduler] 📅 Fenêtre: {range_label} ({total_minutes} min dispo/jour)")
 
         # Fill template and collect scheduled events for the calendar
         events = self._fill_template(
@@ -175,20 +164,34 @@ class Omni_GeeLarkScheduler:
             min_gap_minutes, caption_list, template_type, merged_ranges, max_simultaneous
         )
 
-        # Generate HTML calendar (shared module)
-        html_path = output_file.replace(".xlsx", "_calendar.html")
-        html_content = build_calendar_html(events, base_date, days_spread)
-        with open(html_path, "w", encoding="utf-8") as f:
-            f.write(html_content)
-
         # Safe cleanup: delete intermediate _filled.xlsx only after full success
         if is_intermediate and os.path.exists(template_file):
             os.remove(template_file)
             print(f"🧹 [Omni_GeeLarkScheduler] Fichier intermédiaire supprimé: {os.path.basename(template_file)}")
 
+        # Serialize events to JSON for the dedicated report node
+        events_serializable = []
+        for ev in events:
+            events_serializable.append({
+                "date": ev["date"].isoformat(),
+                "time": ev["time"].strftime("%H:%M"),
+                "account": ev["account"],
+                "caption": ev.get("caption", ""),
+                "color": ev.get("color", "#888"),
+            })
+        
+        output_data = {
+            "metadata": {
+                "template_type": template_type,
+                "generated_at": datetime.now().isoformat()
+            },
+            "events": events_serializable
+        }
+        events_json = json.dumps(output_data, ensure_ascii=False, indent=2)
+
         print(f"[Omni_GeeLarkScheduler] ✅ Fichier prêt: {output_file}")
-        print(f"[Omni_GeeLarkScheduler] 📅 Calendrier: {html_path}")
-        return (output_file, html_path)
+        print(f"[Omni_GeeLarkScheduler] 📊 {len(events)} événements exportés en JSON ({template_type}).")
+        return (output_file, events_json)
 
     # ─────────────────────────────────────────────────────────────────
     # Helpers
@@ -335,14 +338,17 @@ class Omni_GeeLarkScheduler:
                         best_candidate = (a_date, c_time)
                         best_dt = c_dt
                 
-                if best_candidate:
-                    if min_collisions == 0 or max_simultaneous > 1:
-                        results.append(best_candidate)
-                        all_existing.append(best_dt)
-                        attempts = 0
+                if best_candidate and min_collisions < max_simultaneous:
+                    results.append(best_candidate)
+                    all_existing.append(best_dt)
+                    attempts = 0
+                else:
+                    if len(valid_offsets) < 60:
+                        reason = "Fenêtre espace-temps trop courte"
                     else:
-                        print(f"[Omni_GeeLarkScheduler] ⚠️ Fenêtre saturée ({len(results)}/{count} slots placés). Poussée intelligente au jour suivant pour respecter max_simultaneous=1.")
-                        break
+                        reason = "Saturation maximale (max_simultaneous) atteinte"
+                    print(f"[Omni_GeeLarkScheduler] ⚠️ Carence d'espace libre ({reason}). Report de la suite au lendemain ({len(results)}/{count} placés).")
+                    break
                 continue
 
             # Standard Random Probe
@@ -378,16 +384,15 @@ class Omni_GeeLarkScheduler:
 
         total_tasks = len(data_rows)
 
-        # --- Capacity Check & Dynamic Spread Adjustment ---
-        total_minutes_per_day = merged_duration_minutes(merged_ranges)
-        if min_gap_minutes > 0 and total_minutes_per_day > 0:
-            slots_per_day = (total_minutes_per_day // min_gap_minutes) * max_simultaneous
-            if slots_per_day > 0:
-                needed_days = -(-total_tasks // slots_per_day) # ceil division equivalent
-                if needed_days > days_spread:
-                    print(f"[Omni_GeeLarkScheduler] ⚠️ Capacité horaire insuffisante ({slots_per_day} slots/jour dispo).")
-                    print(f"[Omni_GeeLarkScheduler] 🛠️ Auto-ajustement de days_spread : {days_spread} ➔ {needed_days} jours.")
-                    days_spread = needed_days
+        # --- Capacity Validation & Dynamic Spread Adjustment ---
+        rng = merged_ranges[0]
+        validation = validate_schedule_capacity(
+            total_tasks, rng["start_hour"], rng["end_hour"],
+            min_gap_minutes, days_spread, max_simultaneous
+        )
+        for w in validation["warnings"]:
+            print(f"[Omni_GeeLarkScheduler] {w}")
+        days_spread = validation["adjusted_days_spread"]
 
         if caption_list:
             used_captions = list(caption_list)

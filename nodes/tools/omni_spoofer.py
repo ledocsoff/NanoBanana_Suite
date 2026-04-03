@@ -114,7 +114,7 @@ class Omni_Spoofer:
                     self._spoof_photo(input_path, output_path)
                 else:
                     prefix = "IMG"
-                    output_name = f"{prefix}_{seq_num}.MOV"
+                    output_name = f"{prefix}_{seq_num}.MP4"
                     output_path = os.path.join(target_sub_dir, output_name)
                     self._spoof_video(input_path, output_path)
 
@@ -228,10 +228,10 @@ class Omni_Spoofer:
             "-vf", ",".join(v_filters),
             "-af", ",".join(a_filters),
 
-            # ── Format MOV natif Apple (pas MP4) ──
-            "-f", "mov",
+            # ── Format MP4 ──
+            "-f", "mp4",
 
-            # ── Écriture metadata en mdta (format Apple natif) ──
+            # ── Écriture metadata en mdta ──
             "-movflags", "+use_metadata_tags",
 
             # ── Strip TOUTE metadata existante ──

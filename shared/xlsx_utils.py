@@ -7,84 +7,93 @@ import random
 from datetime import datetime, timedelta, time as dtime
 from typing import Any
 
-# ─── Scheduling: Time Blocks (Direct Paris Hours) ──────────────────
-# Single source of truth for all scheduling nodes.
+# ─── Scheduling: Direct Paris Hours ────────────────────────────────
 # Hours are PARIS time — written directly to XLSX, no conversion needed.
-# GeeLark reads Paris time, so what you see = what GeeLark executes.
-
-TIME_BLOCKS = {
-    "☀️ Matin (04h-16h) — Warmup":              {"start_hour": 4,  "end_hour": 16},
-    "🌆 Après-midi (16h-22h) — Maintenance":     {"start_hour": 16, "end_hour": 22},
-    "🌙 Soir (22h-04h) — Prime Time US":         {"start_hour": 22, "end_hour": 4},
-}
-
-TIME_BLOCK_CHOICES = list(TIME_BLOCKS.keys())
 
 # Minimum delay between sequential tasks (warmup). Guard-rail.
 MIN_SEQUENTIAL_DELAY = 15  # minutes
 
-# Mapping from BOOLEAN toggle names → TIME_BLOCKS keys
-BLOCK_KEYS = {
-    "block_matin":     "☀️ Matin (04h-16h) — Warmup",
-    "block_apresmidi":  "🌆 Après-midi (16h-22h) — Maintenance",
-    "block_soir":      "🌙 Soir (22h-04h) — Prime Time US",
-}
+# Jitter safety factor: real usable capacity is ~70% of theoretical
+# due to randomization/anti-pattern spreading.
+_JITTER_SAFETY_FACTOR = 0.7
 
 
-def merge_time_blocks(active_keys: list[str]) -> list[dict]:
-    """Merge selected TIME_BLOCKS into contiguous ranges.
+def range_duration_minutes(start_hour: int, end_hour: int) -> int:
+    """Duration in minutes for a time range. Handles overnight natively.
 
-    Args:
-        active_keys: list of TIME_BLOCKS keys that are enabled.
+    - start=20, end=4  → 480 min (8h overnight)
+    - start=8,  end=20 → 720 min (12h)
+    - start=0,  end=0  → 1440 min (24h full day)
+    """
+    if start_hour == end_hour:
+        return 1440  # 24h
+    if end_hour < start_hour:  # overnight
+        return (24 - start_hour + end_hour) * 60
+    return (end_hour - start_hour) * 60
+
+
+def validate_schedule_capacity(
+    total_tasks: int,
+    start_hour: int,
+    end_hour: int,
+    min_gap_minutes: int,
+    days_spread: int,
+    max_simultaneous: int = 1,
+) -> dict:
+    """Validate if the schedule can fit all tasks. Returns diagnostics.
 
     Returns:
-        List of {"start_hour": int, "end_hour": int} dicts, sorted by start_hour.
-        Adjacent blocks are fused into a single range.
-        E.g. Matin(8-16) + Après-midi(16-22) → [{"start_hour": 8, "end_hour": 22}]
-             Matin(8-16) + Soir(22-04)       → [{"start_hour": 8, "end_hour": 16},
-                                                  {"start_hour": 22, "end_hour": 4}]
-
-    Raises:
-        ValueError: if no blocks are selected.
+        {
+            "feasible": bool,
+            "window_minutes": int,
+            "slots_per_day": int,
+            "needed_days": int,
+            "adjusted_days_spread": int,
+            "warnings": list[str],
+        }
     """
-    if not active_keys:
-        raise ValueError("❌ Aucun créneau horaire sélectionné. Coche au moins un bloc.")
+    window = range_duration_minutes(start_hour, end_hour)
+    warnings = []
 
-    blocks = [TIME_BLOCKS[k] for k in active_keys if k in TIME_BLOCKS]
-    if not blocks:
-        raise ValueError("❌ Aucun créneau valide trouvé.")
+    # Alert 1: Very short window
+    if window < 60:
+        warnings.append(
+            f"⚠️ Fenêtre très courte ({window} min). "
+            f"Risque de clustering des posts."
+        )
 
-    # Sort by start_hour (put overnight blocks last)
-    blocks.sort(key=lambda b: b["start_hour"])
+    # Effective capacity (apply jitter safety factor)
+    raw_slots = max(1, window // min_gap_minutes) * max_simultaneous
+    effective_slots = max(1, int(raw_slots * _JITTER_SAFETY_FACTOR))
 
-    merged = [dict(blocks[0])]
-    for blk in blocks[1:]:
-        prev = merged[-1]
-        # Adjacent if previous end_hour == current start_hour
-        if prev["end_hour"] == blk["start_hour"]:
-            prev["end_hour"] = blk["end_hour"]
-        else:
-            merged.append(dict(blk))
+    needed_days = -(-total_tasks // effective_slots)  # ceil division
 
-    return merged
+    adjusted = days_spread
+    if needed_days > days_spread:
+        adjusted = needed_days
+        warnings.append(
+            f"🛠️ Capacité insuffisante : ~{effective_slots} slots effectifs/jour "
+            f"pour {total_tasks} tâches. "
+            f"Auto-ajustement days_spread : {days_spread} → {needed_days}."
+        )
 
+    # Alert 2: High density even after adjustment
+    density = total_tasks / max(1, adjusted)
+    if density > effective_slots * 0.8:
+        warnings.append(
+            f"⚠️ Densité élevée : ~{density:.0f} posts/jour "
+            f"pour ~{effective_slots} slots effectifs. "
+            f"Certains posts pourraient se chevaucher."
+        )
 
-def merged_duration_minutes(ranges: list[dict]) -> int:
-    """Total duration in minutes across all merged ranges."""
-    total = 0
-    for r in ranges:
-        s, e = r["start_hour"], r["end_hour"]
-        # Note: {start_hour: 4, end_hour: 4} means "full 24h from 04:00 to 04:00 next day"
-        # NOT "zero duration". This is by design when all blocks are logically merged.
-        total += (24 - s + e if e <= s else e - s) * 60
-    return total
-
-
-def block_duration_minutes(time_block: str) -> int:
-    """Calculate the duration of a time block in minutes. Handles overnight blocks."""
-    block = TIME_BLOCKS[time_block]
-    s, e = block["start_hour"], block["end_hour"]
-    return (24 - s + e if e <= s else e - s) * 60
+    return {
+        "feasible": needed_days <= 60,
+        "window_minutes": window,
+        "slots_per_day": effective_slots,
+        "needed_days": needed_days,
+        "adjusted_days_spread": adjusted,
+        "warnings": warnings,
+    }
 
 
 

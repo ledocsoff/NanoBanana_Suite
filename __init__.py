@@ -41,6 +41,11 @@ from .nodes.api.omni_veo import NODE_DISPLAY_NAME_MAPPINGS as VEO_DISPLAY
 from .nodes.generation.omni_script_generator import NODE_CLASS_MAPPINGS as SCRIPT_GEN_MAPPINGS
 from .nodes.generation.omni_script_generator import NODE_DISPLAY_NAME_MAPPINGS as SCRIPT_GEN_DISPLAY
 
+# --- Collect ---
+from .nodes.collect.omni_apify_collector import NODE_CLASS_MAPPINGS as APIFY_MAPPINGS
+from .nodes.collect.omni_apify_collector import NODE_DISPLAY_NAME_MAPPINGS as APIFY_DISPLAY
+from .nodes.collect.omni_apify_report import NODE_CLASS_MAPPINGS as APIFY_REPORT_MAPPINGS
+from .nodes.collect.omni_apify_report import NODE_DISPLAY_NAME_MAPPINGS as APIFY_REPORT_DISPLAY
 
 
 # --- Batch Processing & Loaders ---
@@ -56,6 +61,8 @@ from .nodes.tools.omni_directive_randomizer import NODE_DISPLAY_NAME_MAPPINGS as
 # --- Tools ---
 from .nodes.tools.omni_spoofer import Omni_Spoofer
 from .nodes.tools.omni_geelark_scheduler import Omni_GeeLarkScheduler
+from .nodes.tools.omni_schedule_report import NODE_CLASS_MAPPINGS as SCHEDULE_REPORT_MAPPINGS
+from .nodes.tools.omni_schedule_report import NODE_DISPLAY_NAME_MAPPINGS as SCHEDULE_REPORT_DISPLAY
 from .nodes.tools.omni_static_captioner import Omni_StaticCaptioner
 from .nodes.tools.omni_emoji_bio_gen import Omni_EmojiBioGen
 from .nodes.tools.omni_profile_filler import Omni_ProfileFiller
@@ -110,6 +117,9 @@ NODE_CLASS_MAPPINGS.update(POOL_LOADER_MAPPINGS)
 NODE_CLASS_MAPPINGS.update(KLING_OMNI_MAPPINGS)
 NODE_CLASS_MAPPINGS.update(VEO_MAPPINGS)
 NODE_CLASS_MAPPINGS.update(DIRECTIVE_RAND_MAPPINGS)
+NODE_CLASS_MAPPINGS.update(APIFY_MAPPINGS)
+NODE_CLASS_MAPPINGS.update(APIFY_REPORT_MAPPINGS)
+NODE_CLASS_MAPPINGS.update(SCHEDULE_REPORT_MAPPINGS)
 
 NODE_DISPLAY_NAME_MAPPINGS = {
     # Generation
@@ -159,6 +169,9 @@ NODE_DISPLAY_NAME_MAPPINGS.update(POOL_LOADER_DISPLAY)
 NODE_DISPLAY_NAME_MAPPINGS.update(KLING_OMNI_DISPLAY)
 NODE_DISPLAY_NAME_MAPPINGS.update(VEO_DISPLAY)
 NODE_DISPLAY_NAME_MAPPINGS.update(DIRECTIVE_RAND_DISPLAY)
+NODE_DISPLAY_NAME_MAPPINGS.update(APIFY_DISPLAY)
+NODE_DISPLAY_NAME_MAPPINGS.update(APIFY_REPORT_DISPLAY)
+NODE_DISPLAY_NAME_MAPPINGS.update(SCHEDULE_REPORT_DISPLAY)
 
 WEB_DIRECTORY = "./web"
 
