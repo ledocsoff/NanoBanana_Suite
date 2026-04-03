@@ -78,7 +78,7 @@ class Omni_StaticCaptioner:
             results.append(cap)
 
         final_string = "\n---\n".join(results)
-        print(f"[Omni_StaticCaptioner] ✓ Generated {count} {content_type} captions")
+        print(f"[Omni_StaticCaptioner] ✓ Generated {count} captions")
         return (final_string,)
 
     @classmethod
