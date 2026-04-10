@@ -44,7 +44,7 @@ build_color_map = _calendar_html.build_color_map
 class Omni_AccountWarmupFiller:
     CATEGORY = "Omni/Tools"
     RETURN_TYPES = ("STRING", "STRING",)
-    RETURN_NAMES = ("output_file", "calendar_html",)
+    RETURN_NAMES = ("output_file", "events_json",)
     FUNCTION = "fill_warmup"
     OUTPUT_NODE = True
 
@@ -96,47 +96,11 @@ class Omni_AccountWarmupFiller:
             }
         }
 
-    def _is_time_in_ranges(self, dt, merged_ranges):
-        """Check if a datetime's hour falls within any of the merged ranges."""
-        h = dt.hour
-        for rng in merged_ranges:
-            s, e = rng["start_hour"], rng["end_hour"]
-            if e <= s:  # overnight
-                if h >= s or h < e:
-                    return True
-            else:
-                if s <= h < e:
-                    return True
-        return False
-
-    def _next_block_start(self, dt, merged_ranges):
-        """Find the exact next valid block start from the given datetime."""
-        candidates = []
-        for day_offset in range(0, 3):
-            check_date = dt.date() + timedelta(days=day_offset)
-            for rng in merged_ranges:
-                candidate = datetime.combine(check_date, datetime.min.time()).replace(
-                    hour=rng["start_hour"], minute=random.randint(0, 10)
-                )
-                if candidate > dt:
-                    candidates.append(candidate)
-                    
-        if candidates:
-            return min(candidates)
-
-        # Absolute Fallback: next day, first range
-        next_day = dt.date() + timedelta(days=1)
-        return datetime.combine(next_day, datetime.min.time()).replace(
-            hour=merged_ranges[0]["start_hour"], minute=random.randint(0, 10)
-        )
-
     def fill_warmup(self, template_file, start_hour, end_hour,
                     keywords_pool, min_scroll_videos, max_scroll_videos, start_days_from_now):
         wb, rows = load_template(template_file)
         schema = GEELARK_SCHEMAS.get("account_warmup")
 
-        # Single time range — overnight handled natively
-        merged_ranges = [{"start_hour": start_hour, "end_hour": end_hour}]
         total_block_dur = range_duration_minutes(start_hour, end_hour)
 
         # Auto-generate output filename
@@ -158,14 +122,10 @@ class Omni_AccountWarmupFiller:
         if not keywords_list:
             keywords_list = ["aesthetic"]
 
-        # Tight packing: use minimum delay + small anti-pattern jitter
         omni_accounts = len(rows)
         base_delay = MIN_SEQUENTIAL_DELAY  # 15 min minimum between accounts
-        max_jitter = 8  # 0-8 min random bonus to break pattern
 
-        estimated_total = omni_accounts * (base_delay + max_jitter // 2)
-
-        # Build start datetime — start_hour
+        # Build start datetime
         base_date = datetime.now().date() + timedelta(days=start_days_from_now)
         current_dt = datetime.combine(base_date, datetime.min.time()).replace(
             hour=start_hour, minute=random.randint(0, 10)
@@ -178,26 +138,60 @@ class Omni_AccountWarmupFiller:
 
         is_overnight = end_hour < start_hour or start_hour == end_hour
         range_label = f"{start_hour}h→{end_hour}h" + (" (overnight)" if is_overnight else "")
-        print(f"[Omni_AccountWarmupFiller] ⏳ {omni_accounts} comptes | Fenêtre: {range_label} ({total_block_dur} min dispo)")
-        print(f"[Omni_AccountWarmupFiller] 📐 Packing serré: {base_delay}-{base_delay + max_jitter} min/compte (~{estimated_total} min total estimé)")
+
+        # Calculate available minutes from current_dt to block end
+        if is_overnight:
+            block_end_dt = datetime.combine(
+                current_dt.date() + timedelta(days=1),
+                datetime.min.time()
+            ).replace(hour=end_hour)
+        else:
+            block_end_dt = datetime.combine(
+                current_dt.date(),
+                datetime.min.time()
+            ).replace(hour=end_hour)
+        available_minutes = (block_end_dt - current_dt).total_seconds() / 60
+
+        # Decide pacing strategy based on available space
+        intervals = max(omni_accounts - 1, 1)
+        ideal_spacing = available_minutes / intervals
+
+        if ideal_spacing >= 60 and omni_accounts >= 6:
+            # Plenty of room → use burst waves with organic pauses
+            mode = "burst"
+            burst_size = random.randint(3, min(5, omni_accounts - 1))
+            # Reserve pause time: ~30% of total for burst gaps
+            num_pauses = max(1, (omni_accounts - 1) // burst_size)
+            pause_budget = available_minutes * 0.30
+            per_pause = pause_budget / num_pauses
+            active_budget = available_minutes - pause_budget
+            active_intervals = intervals - num_pauses
+            if active_intervals > 0:
+                active_spacing = active_budget / active_intervals
+            else:
+                active_spacing = base_delay
+            print(f"[Omni_AccountWarmupFiller] ⏳ {omni_accounts} comptes | Fenêtre: {range_label} ({int(available_minutes)} min dispo)")
+            print(f"[Omni_AccountWarmupFiller] 🌊 Mode vagues: ~{burst_size} comptes/vague, pause ~{int(per_pause)} min entre vagues")
+        else:
+            # Tight window → distribute evenly with jitter
+            mode = "even"
+            even_spacing = max(base_delay, available_minutes / intervals)
+            # Jitter = ±25% of spacing, capped to keep within window
+            max_jitter = min(8, int(even_spacing * 0.25))
+            print(f"[Omni_AccountWarmupFiller] ⏳ {omni_accounts} comptes | Fenêtre: {range_label} ({int(available_minutes)} min dispo)")
+            print(f"[Omni_AccountWarmupFiller] 📐 Distribution uniforme: ~{int(even_spacing)} min/compte (±{max_jitter} min jitter)")
 
         # Collect events for calendar + build color map
         accounts = get_account_names(rows)
         color_map = build_color_map(accounts)
         events = []
 
-        # Shuffler l'ordre des comptes pour casser le pattern séquentiel (anti-fingerprint)
+        # Shuffle account order for anti-fingerprint
         random.shuffle(rows)
-        
-        # Burst control variables for organic pacing
-        burst_size = random.randint(3, 7)
+
         current_burst_count = 0
 
         for i, row in enumerate(rows):
-            # If current time is outside all active ranges, jump to next range start
-            if not self._is_time_in_ranges(current_dt, merged_ranges):
-                current_dt = self._next_block_start(current_dt, merged_ranges)
-
             # 1. Write Release Time (Paris time, direct)
             row[schema["release_time"] - 1].value = format_paris_time(current_dt)
 
@@ -220,35 +214,60 @@ class Omni_AccountWarmupFiller:
 
             # Advance time for the NEXT account
             if i < len(rows) - 1:
-                current_burst_count += 1
-                if current_burst_count >= burst_size:
-                    # Organic silence gap between bursts
-                    delay = random.randint(90, 180)  # 1.5 to 3 hours pause
-                    print(f"[Omni_AccountWarmupFiller] 🌊 Fin de vague : Pause organique de {delay} min avant le prochain flot.")
-                    burst_size = random.randint(3, 7)
-                    current_burst_count = 0
+                if mode == "burst":
+                    current_burst_count += 1
+                    if current_burst_count >= burst_size:
+                        delay = per_pause + random.randint(-5, 5)
+                        print(f"[Omni_AccountWarmupFiller] 🌊 Fin de vague : pause de {int(delay)} min")
+                        burst_size = random.randint(3, min(5, len(rows) - 1 - i))
+                        current_burst_count = 0
+                    else:
+                        delay = active_spacing + random.randint(-3, 3)
                 else:
-                    # Tight packing delay within a burst
-                    delay = base_delay + random.randint(0, max_jitter)
-                
-                current_dt += timedelta(minutes=delay)
+                    delay = even_spacing + random.randint(-max_jitter, max_jitter)
+
+                # Hard floor: never less than base_delay
+                delay = max(base_delay, delay)
+
+                # Hard ceiling: never go past block end
+                remaining = (block_end_dt - current_dt).total_seconds() / 60
+                remaining_accounts = len(rows) - 1 - i
+                max_allowed = remaining - (remaining_accounts - 1) * base_delay
+                delay = min(delay, max(base_delay, max_allowed))
+
+                current_dt += timedelta(minutes=int(delay))
 
         output_path = save_template(wb, output_file)
 
-        # Generate HTML calendar
-        html_path = output_file.replace(".xlsx", "_calendar.html")
-        html_content = build_calendar_html(events, base_date, 1)
-        with open(html_path, "w", encoding="utf-8") as f:
-            f.write(html_content)
+        # Serialize events to JSON for the dedicated report node
+        events_serializable = []
+        for ev in events:
+            events_serializable.append({
+                "date": ev["date"].isoformat(),
+                "time": ev["time"].strftime("%H:%M"),
+                "account": ev["account"],
+                "caption": ev.get("caption", ""),
+                "color": ev.get("color", "#888"),
+            })
+        
+        import json
+        output_data = {
+            "metadata": {
+                "template_type": "account_warmup",
+                "generated_at": datetime.now().isoformat()
+            },
+            "events": events_serializable
+        }
+        events_json = json.dumps(output_data, ensure_ascii=False, indent=2)
 
         # Show the actual local times for user reference
         first_local = rows[0][schema["release_time"] - 1].value
         last_local = rows[-1][schema["release_time"] - 1].value
         print(f"[Omni_AccountWarmupFiller] ✅ Fichier prêt: {output_path}")
-        print(f"[Omni_AccountWarmupFiller] 📅 Calendrier: {html_path}")
+        print(f"[Omni_AccountWarmupFiller] 📊 {len(events)} événements prêts pour le rapport HTML.")
         print(f"[Omni_AccountWarmupFiller] 🕐 {first_local} → {last_local} (heure GeeLark/Paris)")
 
-        return (output_path, html_path)
+        return (output_path, events_json)
 
     @classmethod
     def IS_CHANGED(cls, **kwargs):

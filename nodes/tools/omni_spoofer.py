@@ -181,8 +181,18 @@ class Omni_Spoofer:
             "brightness_val": str(brightness_val)
         }
 
+    def _find_tool(self, name, fallback_paths=None):
+        """Cherche un outil CLI (ffmpeg, exiftool) dans le PATH puis dans les chemins connus."""
+        path = shutil.which(name)
+        if path:
+            return path
+        for p in (fallback_paths or []):
+            if os.path.exists(p):
+                return p
+        return None
+
     def _spoof_video(self, input_path, output_path):
-        """Applique micro-transformations visuelles + metadata iPhone réalistes."""
+        """Encode la vidéo pour compatibilité Android (GeeLark) + metadata iPhone réalistes."""
 
         # ── Paramètres visuels aléatoires (changent le hash binaire) ──
         brightness = random.uniform(-0.03, 0.03)
@@ -200,10 +210,13 @@ class Omni_Spoofer:
         meta = self._generate_variable_metadata()
 
         # ── Filtres FFmpeg ──
+        # scale=1080:-2 préserve le ratio original (hauteur auto, arrondie au pair)
+        # setsar=1:1 garantit des pixels carrés pour éviter la distorsion Android
         v_filters = [
             f"eq=brightness={brightness}:contrast={contrast}:saturation={saturation}",
             f"crop=iw*(1-2*{crop_pct:.2f}):ih*(1-2*{crop_pct:.2f}):iw*{crop_pct:.2f}:ih*{crop_pct:.2f}",
-            "scale=1080:1920:flags=lanczos",
+            "scale=1080:-2:flags=lanczos",
+            "setsar=1:1",
             f"setpts={1/speed:.4f}*PTS",
         ]
         a_filters = [
@@ -211,13 +224,7 @@ class Omni_Spoofer:
             f"volume={volume:.4f}",
         ]
 
-        ffmpeg_path = shutil.which("ffmpeg")
-        if not ffmpeg_path:
-            for p in ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg"]:
-                if os.path.exists(p):
-                    ffmpeg_path = p
-                    break
-
+        ffmpeg_path = self._find_tool("ffmpeg", ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg"])
         if not ffmpeg_path:
             raise Exception("FFmpeg introuvable ! Ouvrez votre Terminal Mac et tapez : brew install ffmpeg")
 
@@ -231,36 +238,31 @@ class Omni_Spoofer:
             # ── Format MP4 ──
             "-f", "mp4",
 
-            # ── Écriture metadata en mdta ──
-            "-movflags", "+use_metadata_tags",
+            # ── FASTSTART : moov atom en tête du fichier ──
+            # CRITIQUE pour Android : le MediaScanner et MediaMetadataRetriever
+            # lisent le moov atom pour générer le thumbnail et indexer le fichier.
+            # Sans faststart, le moov est en fin de fichier → le scanner peut
+            # timeout sur les cloud phones GeeLark (I/O cloud plus lent).
+            "-movflags", "+faststart+use_metadata_tags",
 
-            # ── Strip TOUTE metadata existante ──
+            # ── Strip TOUTE metadata existante de la source ──
             "-map_metadata", "-1",
 
-            # ── Metadata Apple QuickTime FIXES (mdta) ──
-            "-metadata", f"com.apple.quicktime.make=Apple",
-            "-metadata", f"com.apple.quicktime.model={DEVICE_MODEL}",
-            "-metadata", f"com.apple.quicktime.software={DEVICE_SOFTWARE}",
-            "-metadata", "com.apple.quicktime.full-frame-rate-playback-intent=1",
-
-            # ── Metadata Apple QuickTime VARIABLES (mdta) ──
-            "-metadata", f"com.apple.quicktime.creationdate={meta['creationdate']}",
-            "-metadata", f"com.apple.quicktime.location.ISO6709={meta['location_iso6709']}",
-            "-metadata", f"com.apple.quicktime.location.accuracy.horizontal={meta['gps_accuracy']}",
-
-            # ── Metadata standard (udta) — cohérente avec mdta ──
+            # ── Metadata standard (udta) — LISIBLE PAR ANDROID ──
+            # Android MediaStore scanne uniquement le format udta, pas mdta.
+            # Ces tags sont essentiels pour l'indexation et le tri chronologique.
             "-metadata", f"creation_time={meta['creation_time_utc']}",
+            "-metadata", f"date={meta['creation_time_utc']}",
             "-metadata", "make=Apple",
             "-metadata", f"model={DEVICE_MODEL}",
 
-            # ── Suppression TOTALE de Lavf et masquage matériel (Anti-Forensic) ──
-            "-fflags", "+bitexact",
-            "-flags", "+bitexact",
-            
+            # ── Anti-Forensic léger (metadata-only, sans corrompre le container) ──
+            # NOTE : Les flags bitexact ont été RETIRÉS car ils produisent un
+            # container MP4 non-standard qu'Android considère comme corrompu.
             "-metadata", "encoder=",
             "-metadata", "encoding_tool=",
 
-            # ── Faux tags de compression format Apple ──
+            # ── Stream-level metadata (handler names Apple) ──
             "-metadata:s:v:0", "vendor_id=appl",
             "-metadata:s:v:0", "encoder=H.264",
             "-metadata:s:a:0", "encoder=AAC",
@@ -273,13 +275,17 @@ class Omni_Spoofer:
             "-preset", preset,
             "-profile:v", profile,
             "-pix_fmt", "yuv420p",
-            
-            # Filtre bitstream pour oblitérer le SEI x264 interne au flux (Le "Smoking Gun")
-            "-bsf:v", "filter_units=remove_types=6",
+            "-tag:v", "avc1",
+
+            # NOTE : Le filtre SEI (filter_units=remove_types=6) a été RETIRÉ.
+            # Les SEI contiennent pic_timing et recovery_point utilisés par les
+            # décodeurs hardware ARM d'Android. Sans eux → black frames, seek
+            # cassé, et thumbnail noire via MediaMetadataRetriever.
 
             # ── Encodage audio ──
             "-c:a", "aac",
             "-b:a", "192k",
+            "-tag:a", "mp4a",
 
             "-y",
             output_path,
@@ -288,6 +294,36 @@ class Omni_Spoofer:
         result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0:
             raise Exception(f"FFmpeg error: {result.stderr[:500] if result.stderr else 'Unknown error'}")
+
+        # ── Post-processing : Injecter les metadata Apple mdta via ExifTool ──
+        # FFmpeg écrit les metadata QuickTime mdta de façon peu fiable.
+        # ExifTool les injecte proprement sans altérer le container MP4.
+        exiftool_path = self._find_tool("exiftool", ["/opt/homebrew/bin/exiftool", "/usr/local/bin/exiftool"])
+        if exiftool_path:
+            exif_cmd = [
+                exiftool_path, "-overwrite_original",
+                f"-QuickTime:Make=Apple",
+                f"-QuickTime:Model={DEVICE_MODEL}",
+                f"-QuickTime:Software={DEVICE_SOFTWARE}",
+                f"-QuickTime:CreationDate={meta['creationdate']}",
+                f"-QuickTime:GPSCoordinates={meta['lat']:.6f} {meta['lon']:.6f} {meta['alt']:.1f}",
+                f"-QuickTime:LocationISO6709={meta['location_iso6709']}",
+                output_path
+            ]
+            subprocess.run(exif_cmd, capture_output=True, text=True)
+
+            # ── Re-faststart : ExifTool réécrit tout le fichier MP4 et peut ──
+            # déplacer le moov atom en fin de fichier, annulant le faststart.
+            # Ce remux léger (pas de ré-encodage) remet le moov en tête.
+            tmp_path = output_path + ".tmp"
+            remux = subprocess.run([
+                ffmpeg_path, "-i", output_path,
+                "-c", "copy",
+                "-movflags", "+faststart",
+                "-y", tmp_path
+            ], capture_output=True, text=True)
+            if remux.returncode == 0 and os.path.exists(tmp_path):
+                os.replace(tmp_path, output_path)
 
     def _spoof_photo(self, input_path, output_path):
         """Applique micro-transformations visuelles + metadata iPhone EXIF réalistes pour une photo."""
@@ -315,13 +351,7 @@ class Omni_Spoofer:
             img.save(output_path, "JPEG", quality=95)
 
         # ── 2. Injection des attributs EXIF via ExifTool ──
-        exiftool_path = shutil.which("exiftool")
-        if not exiftool_path:
-            for p in ["/opt/homebrew/bin/exiftool", "/usr/local/bin/exiftool"]:
-                if os.path.exists(p):
-                    exiftool_path = p
-                    break
-                    
+        exiftool_path = self._find_tool("exiftool", ["/opt/homebrew/bin/exiftool", "/usr/local/bin/exiftool"])
         if not exiftool_path:
             raise Exception("ExifTool introuvable ! Ouvrez votre Terminal Mac et tapez : brew install exiftool")
 
@@ -334,18 +364,27 @@ class Omni_Spoofer:
         focal_length = random.choice(["24", "48", "13", "120"])
         lens_model = f"{DEVICE_MODEL} back camera 6.86mm f/1.78"
         
+        # Commande ExifTool en 2 passes :
+        # 1) Strip tout mais recopier la structure JPEG de base (JFIF, ICC)
+        # 2) Injecter les tags Apple iPhone
+        # NOTE : "-all= -TagsFromFile @" supprime tout puis recopie la structure
+        #        du fichier original. Ça garde les headers JFIF/ICC intacts
+        #        pour que le MediaScanner Android reconnaisse le JPEG.
         cmd = [
             exiftool_path,
             "-overwrite_original",
-            "-all=",  # Strip tout  
-            
+            "-all=",
+            "-TagsFromFile", "@",
+            "-JFIF:ALL",
+            "-ICC_Profile:ALL",
+
             # --- IDENTITÉ FIXE COMPTE (OpSec absolue) ---
             f"-Make=Apple",
             f"-Model={DEVICE_MODEL}",
             f"-Software={DEVICE_SOFTWARE}",
             f"-LensMake=Apple",
             f"-LensModel={lens_model}",
-            
+
             # --- TEMPS ET SYNCHRO (Miami Strategy) ---
             f"-DateTimeOriginal={meta['datetime_original']}",
             f"-CreateDate={meta['datetime_original']}",
@@ -355,25 +394,26 @@ class Omni_Spoofer:
             f"-OffsetTimeDigitized={meta['offset_str']}",
             f"-SubSecTimeOriginal={meta['subsec']}",
             f"-SubSecTimeDigitized={meta['subsec']}",
-            
+
             # --- GPS VARIABLES (Miami Strategy) ---
             f"-GPSLatitude={abs(lat)}",
             f"-GPSLatitudeRef={lat_ref}",
             f"-GPSLongitude={abs(lon)}",
             f"-GPSLongitudeRef={lon_ref}",
             f"-GPSAltitude={alt}",
-            f"-GPSAltitudeRef=0",  # Above sea level
-            
-            # --- PATTERNS DE CAPTURE APPLE (Constantes matérielles) ---
+            f"-GPSAltitudeRef=0",
+
+            # --- STRUCTURE JPEG pour Android MediaStore ---
+            f"-Orientation=Horizontal (normal)",
+            f"-ColorSpace=sRGB",
             f"-ExifVersion=0232",
             f"-FlashpixVersion=0100",
-            f"-ColorSpace=65535",           # Signifie "Uncalibrated", cache le Display P3 d'Apple
-            f"-SceneCaptureType=Standard",  # "0"
-            f"-MeteringMode=Multi-segment", # "5"
-            f"-ExposureProgram=Program AE", # "2"
-            f"-Flash=Off, Did not fire",    # "16"
-            f"-YCbCrPositioning=Centered",  # "1"
-            
+            f"-SceneCaptureType=Standard",
+            f"-MeteringMode=Multi-segment",
+            f"-ExposureProgram=Program AE",
+            f"-Flash=Off, Did not fire",
+            f"-YCbCrPositioning=Centered",
+
             # --- MICRO-VARIATIONS PHOTO (Comportement humain naturel) ---
             f"-FocalLengthIn35mmFormat={focal_length}",
             f"-FNumber=1.78",

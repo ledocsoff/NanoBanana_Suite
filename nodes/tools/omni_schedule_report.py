@@ -44,7 +44,13 @@ class Omni_ScheduleReport:
                 events_raw = data
                 metadata = {}
         except json.JSONDecodeError as e:
-            raise RuntimeError(f"[Omni_ScheduleReport] JSON invalide : {e}")
+            preview = events_json[:150] + ("..." if len(events_json) > 150 else "")
+            raise RuntimeError(
+                f"[Omni_ScheduleReport] ❌ JSON invalide reçu.\n"
+                f"⚠️ Avez-vous connecté le bon point de sortie au point 'events_json' ?\n"
+                f"Contenu reçu : '{preview}'\n"
+                f"Détail de l'erreur : {e}"
+            )
 
         if not isinstance(events_raw, list):
             raise RuntimeError("[Omni_ScheduleReport] Le JSON doit être une liste d'événements (ou un objet contenant 'events').")

@@ -68,10 +68,10 @@ class Omni_ApifyCollector:
         if total_requested == 0:
             raise RuntimeError("[Omni_Collect] ❌ Erreur : Aucun handle valide fourni.")
 
-        print(f"\n[Omni_Collect] 🚀 Lancement d'Apify (instagram-profile-scraper)...")
+        print(f"\n[Omni_Collect] 🚀 Lancement d'Apify...")
         print(f"[Omni_Collect] 📊 Cible : {total_requested} compte(s) | Filtre : {target_media}")
 
-        run_id = self._start_run(apify_token, usernames)
+        run_id = self._start_run(apify_token, usernames, target_media)
         dataset_id = self._poll_until_done(apify_token, run_id, poll_interval, timeout_s)
         items = self._fetch_dataset(apify_token, dataset_id)
         
@@ -107,13 +107,20 @@ class Omni_ApifyCollector:
         return cleaned
 
     @staticmethod
-    def _start_run(token: str, usernames: list[str]) -> str:
-        actor_id = "apify~instagram-profile-scraper"
+    def _start_run(token: str, usernames: list[str], target_media: str) -> str:
+        if target_media == "Dernier Reel / Vidéo":
+            actor_id = "apify~instagram-reel-scraper"
+            # Apify Reel Scraper input schema specifically requires "username" array
+            payload = {
+                "username": usernames
+            }
+        else:
+            actor_id = "apify~instagram-profile-scraper"
+            payload = {
+                "usernames": usernames,
+            }
+            
         url = f"{APIFY_BASE}/acts/{actor_id}/runs"
-        
-        payload = {
-            "usernames": usernames,
-        }
         
         try:
             resp = requests.post(
@@ -188,6 +195,10 @@ class Omni_ApifyCollector:
 
     @staticmethod
     def _extract_stats(items: list[dict], target_media: str) -> list[dict]:
+        # If we successfully used instagram-reel-scraper, items is a flat list of reels mixed with errors
+        if target_media == "Dernier Reel / Vidéo":
+            return Omni_ApifyCollector._extract_reels_stats(items)
+
         stats = []
         for item in items:
             if "error" in item and not "username" in item:
@@ -260,6 +271,78 @@ class Omni_ApifyCollector:
                     "followersCount": followers,
                 })
 
+        return stats
+
+    @staticmethod
+    def _extract_reels_stats(items: list[dict]) -> list[dict]:
+        reels_by_user = {}
+        for item in items:
+            uname = item.get("ownerUsername") or item.get("ownerFullName") or item.get("username")
+            
+            # Apify might return error objects retaining the URL or username
+            if not uname and item.get("url"):
+                try:
+                    # try to extract username from url
+                    parts = item["url"].rstrip("/").split("/")
+                    if "instagram.com" in item["url"] and len(parts) > 3:
+                        uname = parts[-1]
+                except:
+                    pass
+            
+            if not uname:
+                continue
+                
+            uname = uname.lower()
+            if uname not in reels_by_user:
+                reels_by_user[uname] = []
+            
+            # Only append valid reel items
+            if not item.get("error") and (item.get("videoViewCount") is not None or "type" in item):
+                reels_by_user[uname].append(item)
+            
+        stats = []
+        for uname, user_reels in reels_by_user.items():
+            if not user_reels:
+                # No valid reels found for this user (they had only errors/empty results)
+                stats.append({
+                    "username": uname,
+                    "post_url": f"https://instagram.com/{uname}",
+                    "likes": 0,
+                    "comments": 0,
+                    "videoViewCount": 0,
+                    "videoPlayCount": 0,
+                    "timestamp": "",
+                    "type": "Aucun Média Trouvé",
+                    "followersCount": 0,
+                })
+                continue
+                
+            try:
+                sorted_reels = sorted(
+                    [r for r in user_reels if r.get("timestamp")],
+                    key=lambda x: x["timestamp"],
+                    reverse=True
+                )
+            except Exception:
+                sorted_reels = user_reels
+                
+            if sorted_reels:
+                latest = sorted_reels[0]
+                url = latest.get("url") or latest.get("videoUrl") or ""
+                if not url and latest.get("shortCode"):
+                    url = f"https://www.instagram.com/p/{latest.get('shortCode')}/"
+                    
+                stats.append({
+                    "username": latest.get("ownerUsername", uname),
+                    "post_url": url,
+                    "likes": latest.get("likesCount", 0),
+                    "comments": latest.get("commentsCount", 0),
+                    "videoViewCount": latest.get("videoViewCount", 0),
+                    "videoPlayCount": latest.get("videoPlayCount", 0),
+                    "timestamp": latest.get("timestamp", ""),
+                    "type": "Video",
+                    "followersCount": 0,
+                })
         return stats
 
     @classmethod
