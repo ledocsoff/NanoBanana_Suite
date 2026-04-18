@@ -48,4 +48,4 @@ class Omni_BatchScriptQueue:
         return (output_folder, filename_stem)
 
 NODE_CLASS_MAPPINGS = {"Omni_BatchScriptQueue": Omni_BatchScriptQueue}
-NODE_DISPLAY_NAME_MAPPINGS = {"Omni_BatchScriptQueue": "Random Filename Generator"}
+NODE_DISPLAY_NAME_MAPPINGS = {"Omni_BatchScriptQueue": "🎲 Random Filename Generator"}

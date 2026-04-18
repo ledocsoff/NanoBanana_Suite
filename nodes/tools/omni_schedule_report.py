@@ -287,5 +287,5 @@ NODE_CLASS_MAPPINGS = {
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "Omni_ScheduleReport": "Schedule HTML Report",
+    "Omni_ScheduleReport": "📅 Schedule HTML Report",
 }

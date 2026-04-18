@@ -66,4 +66,4 @@ class Omni_DirectiveRandomizer:
 
 
 NODE_CLASS_MAPPINGS = {"Omni_DirectiveRandomizer": Omni_DirectiveRandomizer}
-NODE_DISPLAY_NAME_MAPPINGS = {"Omni_DirectiveRandomizer": "Directive Randomizer"}
+NODE_DISPLAY_NAME_MAPPINGS = {"Omni_DirectiveRandomizer": "🎯 Directive Randomizer"}

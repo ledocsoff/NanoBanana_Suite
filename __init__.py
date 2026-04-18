@@ -68,6 +68,10 @@ from .nodes.tools.omni_emoji_bio_gen import Omni_EmojiBioGen
 from .nodes.tools.omni_profile_filler import Omni_ProfileFiller
 from .nodes.tools.omni_warmup_filler import Omni_AccountWarmupFiller
 
+# --- Telegram ---
+from .omni_telegram import NODE_CLASS_MAPPINGS as TELEGRAM_MAPPINGS
+from .omni_telegram import NODE_DISPLAY_NAME_MAPPINGS as TELEGRAM_DISPLAY
+
 # --- Shared ---
 from .shared.gemini_config import OmniGeminiConfig
 
@@ -120,46 +124,47 @@ NODE_CLASS_MAPPINGS.update(DIRECTIVE_RAND_MAPPINGS)
 NODE_CLASS_MAPPINGS.update(APIFY_MAPPINGS)
 NODE_CLASS_MAPPINGS.update(APIFY_REPORT_MAPPINGS)
 NODE_CLASS_MAPPINGS.update(SCHEDULE_REPORT_MAPPINGS)
+NODE_CLASS_MAPPINGS.update(TELEGRAM_MAPPINGS)
 
 NODE_DISPLAY_NAME_MAPPINGS = {
     # Generation
-    "OmniPromptToImage": "Prompt to Image",
-    "OmniImageToImage": "Image to Image",
+    "OmniPromptToImage": "🎨 Prompt to Image",
+    "OmniImageToImage": "🖼️ Image to Image",
     
     # Direction
-    "OmniAIDirector": "IA Director",
-    "OmniMatrixBuilder": "Matrix Builder",
-    "OmniVisionAPI": "Vision API",
-    "OmniVariantDirector": "Variant Director",
-    "OmniVariantAPI": "Variant API",
-    "OmniChooser": "Chooser",
+    "OmniAIDirector": "🎬 IA Director",
+    "OmniMatrixBuilder": "🧱 Matrix Builder",
+    "OmniVisionAPI": "👁️ Vision API",
+    "OmniVariantDirector": "🔀 Variant Director",
+    "OmniVariantAPI": "🔀 Variant API",
+    "OmniChooser": "✅ Chooser",
     
     # Face
-    "OmniSwap": "Swap",
-    "OmniIdentityGate": "Identity Gate",
+    "OmniSwap": "🎭 Swap",
+    "OmniIdentityGate": "🛡️ Identity Gate",
     
     # Post-process
-    "OmniPreview": "Preview",
-    "OmniCleanSave": "Clean Save",
+    "OmniPreview": "👀 Preview",
+    "OmniCleanSave": "💾 Clean Save",
     
     # Shared
-    "OmniGeminiConfig": "Gemini Config",
+    "OmniGeminiConfig": "⚙️ Gemini Config",
     
     # Video
-    "Omni_BatchVideoQueue": "Batch Video Queue",
-    "Omni_VideoFirstFrame": "Video First Frame",
+    "Omni_BatchVideoQueue": "🎞️ Batch Video Queue",
+    "Omni_VideoFirstFrame": "🖼️ Video First Frame",
     
     # Tools
-    "Omni_Spoofer": "Spoofer",
-    "Omni_GeeLarkScheduler": "GeeLark Scheduler",
-    "Omni_StaticCaptioner": "Static Captioner",
-    "Omni_EmojiBioGen": "Emoji Bio Generator",
-    "Omni_ProfileFiller": "Profile Filler",
-    "Omni_AccountWarmupFiller": "Account Warmup Filler",
+    "Omni_Spoofer": "🕵️ Spoofer",
+    "Omni_GeeLarkScheduler": "📅 GeeLark Scheduler",
+    "Omni_StaticCaptioner": "✏️ Static Captioner",
+    "Omni_EmojiBioGen": "😎 Emoji Bio Generator",
+    "Omni_ProfileFiller": "👤 Profile Filler",
+    "Omni_AccountWarmupFiller": "🔥 Account Warmup Filler",
     
     # API
-    "Omni_PiAPIAuth": "PiAPI Kling Auth",
-    "Omni_PiAPIKlingMotionControl": "PiAPI Kling Motion Control",
+    "Omni_PiAPIAuth": "🔑 PiAPI Kling Auth",
+    "Omni_PiAPIKlingMotionControl": "🎮 PiAPI Kling Motion Control",
 }
 
 NODE_DISPLAY_NAME_MAPPINGS.update(SCRIPT_GEN_DISPLAY)
@@ -172,6 +177,7 @@ NODE_DISPLAY_NAME_MAPPINGS.update(DIRECTIVE_RAND_DISPLAY)
 NODE_DISPLAY_NAME_MAPPINGS.update(APIFY_DISPLAY)
 NODE_DISPLAY_NAME_MAPPINGS.update(APIFY_REPORT_DISPLAY)
 NODE_DISPLAY_NAME_MAPPINGS.update(SCHEDULE_REPORT_DISPLAY)
+NODE_DISPLAY_NAME_MAPPINGS.update(TELEGRAM_DISPLAY)
 
 WEB_DIRECTORY = "./web"
 

@@ -81,4 +81,4 @@ class Omni_ImagePoolLoader:
         return (image_tensor, filename)
 
 NODE_CLASS_MAPPINGS = {"Omni_ImagePoolLoader": Omni_ImagePoolLoader}
-NODE_DISPLAY_NAME_MAPPINGS = {"Omni_ImagePoolLoader": "Image Pool Loader"}
+NODE_DISPLAY_NAME_MAPPINGS = {"Omni_ImagePoolLoader": "🏊 Image Pool Loader"}

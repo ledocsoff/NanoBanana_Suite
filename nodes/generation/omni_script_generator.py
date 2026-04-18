@@ -180,4 +180,4 @@ class Omni_ScriptGenerator:
         return (clean_text, word_count, "OK")
 
 NODE_CLASS_MAPPINGS = {"Omni_ScriptGenerator": Omni_ScriptGenerator}
-NODE_DISPLAY_NAME_MAPPINGS = {"Omni_ScriptGenerator": "Generic AI Generator"}
+NODE_DISPLAY_NAME_MAPPINGS = {"Omni_ScriptGenerator": "🤖 Generic AI Generator"}

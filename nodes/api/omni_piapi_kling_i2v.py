@@ -291,4 +291,4 @@ class Omni_PiAPIKlingOmni:
 
 
 NODE_CLASS_MAPPINGS = {"Omni_PiAPIKlingOmni": Omni_PiAPIKlingOmni}
-NODE_DISPLAY_NAME_MAPPINGS = {"Omni_PiAPIKlingOmni": "PiAPI Kling Omni"}
+NODE_DISPLAY_NAME_MAPPINGS = {"Omni_PiAPIKlingOmni": "🎬 PiAPI Kling Omni"}

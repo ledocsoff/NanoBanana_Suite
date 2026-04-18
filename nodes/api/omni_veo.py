@@ -207,4 +207,4 @@ class Omni_Veo:
                     pass
 
 NODE_CLASS_MAPPINGS = {"Omni_Veo": Omni_Veo}
-NODE_DISPLAY_NAME_MAPPINGS = {"Omni_Veo": "Omni_Veo"}
+NODE_DISPLAY_NAME_MAPPINGS = {"Omni_Veo": "🌐 Omni Veo"}
